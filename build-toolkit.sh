@@ -10,19 +10,31 @@ get_version() {
 }
 
 run() {
-    echo ">>> $*"
-    if ! "$@"; then
-        echo "Error while executing $*" >&2
-        exit 1
+  local new_args=()
+  local IGNORE_ERRORS=0
+  local EXIT_CODE
+  for arg in "$@"; do
+    if [[ "$arg" == --ignore-errors* ]]; then
+      IGNORE_ERRORS+=("${arg#--ignore-errors=}")
+    else
+      new_args+=("$arg")
     fi
+  done
+  echo ">>> ${new_args[*]}"
+  "${new_args[@]}"
+  EXIT_CODE=$?
+  if [[ ! ${IGNORE_ERRORS[*]} =~ $EXIT_CODE ]]; then
+      echo "Error while executing ${new_args[*]} $EXIT_CODE ${IGNORE_ERRORS[*]}" >&2
+      exit $EXIT_CODE
+  fi
 }
 
 require_venv() {
-    if [ ! -d "venv" ]; then
-        run python3 -m venv venv
-    fi
-    run source venv/bin/activate
-    run python -m pip install meson ninja --root-user-action=ignore
+  if [ ! -d "venv" ]; then
+      run python3 -m venv venv
+  fi
+  run source venv/bin/activate
+  run python -m pip install meson ninja --root-user-action=ignore
 }
 
 require_rust() {
@@ -112,7 +124,7 @@ build_and_install() {
 
   if [[ "$skip_build" == "false" ]]; then
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" ]]; then
-        run make -j"$(nproc)"
+        run make -j"$(nproc)" --ignore-errors=2
         run make install
       else
         run python -m ninja -C build
