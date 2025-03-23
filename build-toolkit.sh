@@ -82,6 +82,16 @@ build_and_install() {
       echo "Running autogen.sh for $repo_name with static build options: ${new_args[*]}"
       run ./autogen.sh --enable-static --disable-shared --enable-pic "${new_args[@]}"
       ;;
+    configure)
+      echo "Running configure for $repo_name with options: ${new_args[*]}"
+      run ./autogen.sh
+      run ./configure --prefix=/usr "${new_args[@]}"
+      ;;
+    configure-static)
+      echo "Running configure for $repo_name with static build options: ${new_args[*]}"
+      run ./autogen.sh
+      run ./configure --enable-static --disable-shared --enable-pic "${new_args[@]}"
+      ;;
     meson)
       echo "Running meson for $repo_name with options: ${new_args[*]}"
       run python -m mesonbuild.mesonmain setup build --prefix=/usr "${new_args[@]}"
@@ -101,7 +111,7 @@ build_and_install() {
   esac
 
   if [[ "$skip_build" == "false" ]]; then
-    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" ]]; then
+    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" ]]; then
         run make -j"$(nproc)"
         run make install
       else
