@@ -110,7 +110,7 @@ build_and_install() {
       ;;
     meson-static)
       echo "Running meson for $repo_name with static build options: ${new_args[*]}"
-      run python -m mesonbuild.mesonmain setup build --prefix=/app/build_output --libdir=lib --buildtype=release --default-library=static "${new_args[@]}"
+      run python -m mesonbuild.mesonmain setup build --libdir=lib --buildtype=release --default-library=static "${new_args[@]}"
       ;;
     cmake)
       echo "Running cmake with options: ${new_args[*]}"
