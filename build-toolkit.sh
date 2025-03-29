@@ -37,6 +37,14 @@ require_venv() {
   run python -m pip install meson ninja --root-user-action=ignore
 }
 
+configure_autogen() {
+  if [ ! -f autogen.sh ]; then
+    run autoreconf -ivf
+  else
+    run ./autogen.sh
+  fi
+}
+
 require_rust() {
   curl https://sh.rustup.rs -sSf | sh -s -- -y
   source "$HOME"/.cargo/env
@@ -52,7 +60,8 @@ build_and_install() {
 
   local update_submodules=false
   local skip_build=false
-  local pre_autogen_command=""
+  local setup_commands=""
+  local cleanup_commands=""
   local new_args=()
 
   for arg in "$@"; do
@@ -60,8 +69,10 @@ build_and_install() {
       update_submodules=true
     elif [[ "$arg" == "--skip-build" ]]; then
       skip_build=true
-    elif [[ "$arg" == --pre-autogen-command* ]]; then
-      pre_autogen_command="${arg#--pre-autogen-command=}"
+    elif [[ "$arg" == --setup-commands* ]]; then
+      setup_commands="${arg#--setup-commands=}"
+    elif [[ "$arg" == --cleanup-commands* ]]; then
+      cleanup_commands="${arg#--cleanup-commands=}"
     else
       new_args+=("$arg")
     fi
@@ -79,10 +90,10 @@ build_and_install() {
     run git submodule update --init --recursive
   fi
 
-  if [ -n "$pre_autogen_command" ]; then
-      local pre_autogen_command_array
-      eval "pre_autogen_command_array=($pre_autogen_command)"
-      run "${pre_autogen_command_array[@]}"
+  if [ -n "$setup_commands" ]; then
+      local setup_commands_array
+      eval "setup_commands_array=($setup_commands)"
+      run "${setup_commands_array[@]}"
   fi
 
   case "$build_type" in
@@ -96,12 +107,12 @@ build_and_install() {
       ;;
     configure)
       echo "Running configure for $repo_name with options: ${new_args[*]}"
-      run ./autogen.sh
+      configure_autogen
       run ./configure --prefix=/usr "${new_args[@]}"
       ;;
     configure-static)
       echo "Running configure for $repo_name with static build options: ${new_args[*]}"
-      run ./autogen.sh
+      configure_autogen
       run ./configure --enable-static --disable-shared --enable-pic "${new_args[@]}"
       ;;
     meson)
@@ -130,6 +141,11 @@ build_and_install() {
         run python -m ninja -C build
         run python -m ninja -C build install
       fi
+  fi
+  if [ -n "$cleanup_commands" ]; then
+      local cleanup_commands_array
+      eval "cleanup_commands_array=($cleanup_commands)"
+      run "${cleanup_commands_array[@]}"
   fi
   cd .. || exit 1
 }
