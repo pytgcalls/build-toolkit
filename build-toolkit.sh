@@ -3,6 +3,15 @@
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/pkgconfig:$PKG_CONFIG_PATH
 export ACLOCAL_PATH=/usr/share/aclocal
 
+OS_ARCH=""
+
+for arg in "$@"; do
+  if [[ $arg == --arch=* ]]; then
+    # shellcheck disable=SC2034
+    OS_ARCH="${arg#--arch=}"
+  fi
+done
+
 LIBRARIES_FILE="libraries.properties"
 # shellcheck disable=SC2034
 FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
