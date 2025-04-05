@@ -1,12 +1,170 @@
+#!/usr/bin/env bash
+
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/pkgconfig:$PKG_CONFIG_PATH
 export ACLOCAL_PATH=/usr/share/aclocal
 
 LIBRARIES_FILE="libraries.properties"
 # shellcheck disable=SC2034
 FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
+VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
+WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
+
+try_setup_msvc() {
+  if (is_windows); then
+    VS_EDITION="$(get_vs_edition "$VS_BASE_PATH")"
+    MSVC_VERSION="$(get_msvc_version "$VS_BASE_PATH" "$VS_EDITION")"
+    WINDOWS_KITS_VERSION="$(get_windows_kits_version "$WINDOWS_KITS_BASE_PATH")"
+
+    export PATH="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/bin/Hostx64/x64:$PATH"
+    export LIB="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/lib/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/um/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/ucrt/x64"
+    export INCLUDE="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/include:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/ucrt:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/um:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/shared"
+    echo "Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION"
+  fi
+}
+
+try_setup_xcode() {
+  if (is_macos); then
+    export MACOSX_DEPLOYMENT_TARGET=12.0
+  fi
+}
+
+os_lib_format() {
+  local is_static=false
+  case "$1" in
+    static)
+      is_static=true
+      ;;
+    shared)
+      is_static=false
+      ;;
+    *)
+      echo "Unknown library type: $1" >&2
+      exit 1
+      ;;
+  esac
+  if (is_windows); then
+    if $is_static; then
+      echo "$2.lib"
+    else
+      echo "$2.dll"
+    fi
+  elif (is_linux); then
+    if $is_static; then
+      echo "lib$2.a"
+    else
+      echo "lib$2.so"
+    fi
+  elif (is_macos); then
+    if $is_static; then
+      echo "lib$2.a"
+    else
+      echo "lib$2.dylib"
+    fi
+  else
+    echo "Unknown OS: $(uname -s)" >&2
+    exit 1
+  fi
+}
 
 get_version() {
     grep "^$1=" "$LIBRARIES_FILE" | cut -d '=' -f2
+}
+
+is_windows() {
+  case "$(uname -s)" in
+    CYGWIN*|MINGW*|MSYS*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_linux() {
+  case "$(uname -s)" in
+    Linux)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_macos() {
+  case "$(uname -s)" in
+    Darwin)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+get_vs_edition() {
+    local VS_YEAR VS_EDITION year dir
+    local VS_BASE_PATH="$1"
+
+    for dir in "$VS_BASE_PATH"/*; do
+        [[ -d "$dir" ]] || continue
+        year="${dir##*/}"
+        if [[ "$year" =~ ^[0-9]{4}$ ]]; then
+            if [[ -z "$VS_YEAR" || "$year" -gt "$VS_YEAR" ]]; then
+                VS_YEAR="$year"
+            fi
+        fi
+    done
+
+    local VS_BASE_PATH="$VS_BASE_PATH/$VS_YEAR"
+
+    for edition in Enterprise Professional Community; do
+        if [[ -d "$VS_BASE_PATH/$edition" ]]; then
+            VS_EDITION="$edition"
+            break
+        fi
+    done
+
+    echo "$VS_YEAR/$VS_EDITION"
+}
+
+get_msvc_version() {
+  local VS_BASE_PATH="$1"
+  local VS_EDITION="$2"
+  local msvc_dir version MSVC_VERSION
+
+  for msvc_dir in "$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/"*; do
+      [[ -d "$msvc_dir" ]] || continue
+      version="${msvc_dir##*/}"
+      if [[ "$version" =~ [0-9.]+ ]]; then
+          if [[ -z "$MSVC_VERSION" || "$version" > "$MSVC_VERSION" ]]; then
+              MSVC_VERSION="$version"
+          fi
+      fi
+  done
+
+  echo "$MSVC_VERSION"
+}
+
+get_windows_kits_version() {
+  local WINDOWS_KITS_BASE_PATH="$1"
+  local WINDOWS_KITS_VERSION=""
+  local version dir
+
+  for dir in "$WINDOWS_KITS_BASE_PATH/Include/"*; do
+    [[ -d "$dir" ]] || continue
+    version="${dir##*/}"
+    if [[ "$version" =~ ^[0-9.]+$ ]]; then
+      if [[ -z "$WINDOWS_KITS_VERSION" || "$version" > "$WINDOWS_KITS_VERSION" ]]; then
+        WINDOWS_KITS_VERSION="$version"
+      fi
+    fi
+  done
+
+  echo "$WINDOWS_KITS_VERSION"
+}
+
+cpu_count() {
+  if is_macos; then
+    sysctl -n hw.logicalcpu
+  else
+    nproc
+  fi
 }
 
 run() {
@@ -38,10 +196,12 @@ require_venv() {
 }
 
 configure_autogen() {
-  if [ ! -f autogen.sh ]; then
-    run autoreconf -ivf
-  else
-    run ./autogen.sh
+  if [ -f configure.ac ]; then
+    if [ ! -f autogen.sh ]; then
+      run autoreconf -ivf
+    else
+      run ./autogen.sh
+    fi
   fi
 }
 
@@ -73,6 +233,23 @@ build_and_install() {
       setup_commands="${arg#--setup-commands=}"
     elif [[ "$arg" == --cleanup-commands* ]]; then
       cleanup_commands="${arg#--cleanup-commands=}"
+    elif [[ "$arg" =~ --(windows|linux|macos).*=.* ]]; then
+      platforms="${arg%%=*}"
+      platforms="${platforms#--}"
+      IFS='-' read -r -a platform_list <<< "$platforms"
+      platform_supported=false
+      for platform in "${platform_list[@]}"; do
+        case "$platform" in
+          windows) is_windows && platform_supported=true ;;
+          linux) is_linux && platform_supported=true ;;
+          macos) is_macos && platform_supported=true ;;
+        esac
+      done
+
+      if [ "$platform_supported" == true ]; then
+        read -r -a tmp <<< "${arg#--"$platforms"=}"
+        new_args+=("${tmp[@]}")
+      fi
     else
       new_args+=("$arg")
     fi
@@ -135,7 +312,7 @@ build_and_install() {
 
   if [[ "$skip_build" == "false" ]]; then
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" ]]; then
-        run make -j"$(nproc)" --ignore-errors=2
+        run make -j"$(cpu_count)" --ignore-errors=2
         run make install
       else
         run python -m ninja -C build
