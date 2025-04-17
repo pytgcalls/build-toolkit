@@ -299,12 +299,26 @@ run() {
   fi
 }
 
-require_venv() {
-  if [ ! -d "venv" ]; then
-      run python3 -m venv venv
-  fi
-  run source venv/bin/activate
-  run python -m pip install meson ninja --root-user-action=ignore
+require() {
+  case "$1" in
+    rust)
+      if [ ! -d "$HOME/.cargo" ]; then
+        run curl https://sh.rustup.rs -sSf | sh -s -- -y
+      fi
+      run source "$HOME"/.cargo/env
+      ;;
+    venv)
+      if [ ! -d "venv" ]; then
+        run python3 -m venv venv
+      fi
+      run source venv/bin/activate
+      run python -m pip install meson ninja --root-user-action=ignore
+      ;;
+    *)
+      echo "Unknown requirement: $1" >&2
+      exit 1
+      ;;
+  esac
 }
 
 configure_autogen() {
@@ -315,11 +329,6 @@ configure_autogen() {
       run ./autogen.sh
     fi
   fi
-}
-
-require_rust() {
-  curl https://sh.rustup.rs -sSf | sh -s -- -y
-  source "$HOME"/.cargo/env
 }
 
 build_and_install() {
