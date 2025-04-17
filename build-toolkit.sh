@@ -12,7 +12,6 @@ for arg in "$@"; do
   fi
 done
 
-LIBRARY_VERSIONS_INDEX=''
 DEFAULT_BUILD_FOLDER="_build"
 # shellcheck disable=SC2034
 FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
@@ -156,30 +155,31 @@ import() {
   fi
 
   if [[ "$file_name" == *.properties ]]; then
-    if [[ -z "$LIBRARY_VERSIONS_INDEX" ]]; then
-      LIBRARY_VERSIONS_INDEX="$content"
-    else
-      LIBRARY_VERSIONS_INDEX=$(echo -e "$LIBRARY_VERSIONS_INDEX\n$content" | awk '!seen[$0]++')
-    fi
-    update_versions
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+        key="${BASH_REMATCH[1]}"
+        key="${key^^}"
+        key="${key//-/_}"
+        version_var="${key}_VERSION"
+        source_var="${key}_SOURCE"
+        if [[ -n "${!version_var}" ]]; then
+          printf "[warn] version for %s already set\n" "${BASH_REMATCH[1]}" >&2
+          printf "       previous value  : %s\n" "${!version_var}" >&2
+          printf "       declared at     : %s\n" "${!source_var}" >&2
+          printf "       overriding with : %s\n" "${BASH_REMATCH[2]}" >&2
+          printf "       imported from   : %s\n" "$remote_source/$file_name" >&2
+        fi
+        value="${BASH_REMATCH[2]}"
+        export "$version_var=$value"
+        export "$source_var=$remote_source/$file_name"
+      fi
+    done <<< "$content"
   elif [[ "$file_name" == *.sh ]]; then
     source /dev/stdin <<< "$content"
   else
     echo "Unknown import file type: $file_name" >&2
     return 1
   fi
-}
-
-update_versions() {
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      key="${BASH_REMATCH[1]}"
-      key="${key^^}"
-      key="${key//-/_}_VERSION"
-      value="${BASH_REMATCH[2]}"
-      export "$key=$value"
-    fi
-  done <<< "$LIBRARY_VERSIONS_INDEX"
 }
 
 is_windows() {
