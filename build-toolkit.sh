@@ -13,6 +13,7 @@ for arg in "$@"; do
 done
 
 LIBRARY_VERSIONS_INDEX=''
+DEFAULT_BUILD_FOLDER="_build"
 # shellcheck disable=SC2034
 FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
 VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
@@ -357,6 +358,9 @@ build_and_install() {
     fi
   done
 
+  mkdir -p "$DEFAULT_BUILD_FOLDER"
+  cd "$DEFAULT_BUILD_FOLDER" || exit 1
+
   if [ -n "$repo_url" ] && [ -n "$branch" ]; then
     if [ ! -d "$repo_name" ]; then
       run git clone "$repo_url" --branch "$branch" --depth 1
@@ -428,5 +432,5 @@ build_and_install() {
       eval "cleanup_commands_array=($cleanup_commands)"
       run "${cleanup_commands_array[@]}"
   fi
-  cd .. || exit 1
+  cd ../.. || exit 1
 }
