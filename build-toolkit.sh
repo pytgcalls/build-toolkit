@@ -12,7 +12,7 @@ for arg in "$@"; do
   fi
 done
 
-LIBRARIES_FILE="libraries.properties"
+LIBRARY_VERSIONS_INDEX=''
 # shellcheck disable=SC2034
 FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
 VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
@@ -75,8 +75,98 @@ os_lib_format() {
   fi
 }
 
+import() {
+  local is_import=true
+  local file_name=$1
+  local found_from=false
+  local remote_source=''
+  local internal_source=''
+  local content=''
+
+  for arg in "$@"; do
+    if $is_import; then
+      is_import=false
+    elif [[ "$arg" == from ]]; then
+      found_from=true
+    elif $found_from; then
+      remote_source="$arg"
+      break
+    else
+      echo "Invalid argument: $arg" >&2
+      return 1
+    fi
+  done
+
+  if [[ -z "$remote_source" ]] && $found_from; then
+    echo "No remote source provided for import $file_name" >&2
+    return 1
+  fi
+
+  if [[ -z "$file_name" ]]; then
+    echo "No file name provided for import" >&2
+    return 1
+  fi
+
+  if [[ ! -f "$file_name" ]] && ! $found_from; then
+    echo "Failed to import $file_name, file not found" >&2
+    return 1
+  fi
+
+  if $found_from; then
+    internal_source="$remote_source"
+    internal_source="${internal_source%/}"
+    internal_source="$internal_source/$file_name"
+    normalized_source="${remote_source#http://}"
+
+    normalized_source="${normalized_source#https://}"
+    if [[ "$normalized_source" == github.com/* ]]; then
+      temp_remote="${normalized_source/github.com\//}"
+      temp_remote="${temp_remote%.git}"
+      repo_owner="${temp_remote%%/*}"
+      rest="${temp_remote#*/}"
+      repo_name="${rest%%/*}"
+      repo_path="${rest#*/}"
+      repo_path="${repo_path%/}"
+      if [[ "$rest" == "$repo_name" ]]; then
+        repo_path=""
+      fi
+      remote_source="github.com/$repo_owner/$repo_name"
+      internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master"
+      if [[ -n "$repo_path" ]]; then
+        remote_source="$remote_source/$repo_path"
+        internal_source="$internal_source/$repo_path"
+      fi
+      internal_source="$internal_source/$file_name"
+    fi
+
+    response=$(curl -L -s -w "%{http_code}" "$internal_source")
+    http_code="${response: -3}"
+    content="${response:0:${#response}-3}"
+
+    if [[ "$http_code" -ge 400 ]]; then
+      echo "Failed to import $file_name from $remote_source, Server returned $http_code" >&2
+      return 1
+    elif [[ -z "$content" ]]; then
+      echo "Failed to import $file_name from $remote_source" >&2
+      return 1
+    fi
+  else
+    content=$(<"$file_name")
+  fi
+
+  if [[ "$file_name" == *.properties ]]; then
+    if [[ -z "$LIBRARY_VERSIONS_INDEX" ]]; then
+      LIBRARY_VERSIONS_INDEX="$content"
+    else
+      LIBRARY_VERSIONS_INDEX=$(echo -e "$LIBRARY_VERSIONS_INDEX\n$content" | awk '!seen[$0]++')
+    fi
+  elif [[ "$file_name" == *.sh ]]; then
+    source /dev/stdin <<< "$content"
+  fi
+}
+
 get_version() {
-    grep "^$1=" "$LIBRARIES_FILE" | cut -d '=' -f2
+    grep "^$1=" <<< "$LIBRARY_VERSIONS_INDEX" | cut -d '=' -f2
 }
 
 is_windows() {
@@ -255,7 +345,7 @@ build_and_install() {
         esac
       done
 
-      if [ "$platform_supported" == true ]; then
+      if $platform_supported; then
         read -r -a tmp <<< "${arg#--"$platforms"=}"
         new_args+=("${tmp[@]}")
       fi
@@ -313,14 +403,16 @@ build_and_install() {
       echo "Running cmake with options: ${new_args[*]}"
       run cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -G Ninja "${new_args[@]}"
       ;;
+    make)
+      ;;
     *)
       echo "Unknown build type: $build_type" >&2
       exit 1
       ;;
   esac
 
-  if [[ "$skip_build" == "false" ]]; then
-    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" ]]; then
+  if ! $skip_build; then
+    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" ]]; then
         run make -j"$(cpu_count)" --ignore-errors=2
         run make install
       else
