@@ -1,2 +1,4 @@
 .idea
 test.sh
+*.cache
+libraries.properties

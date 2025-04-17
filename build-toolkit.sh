@@ -3,20 +3,22 @@
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/pkgconfig:$PKG_CONFIG_PATH
 export ACLOCAL_PATH=/usr/share/aclocal
 
-OS_ARCH=""
+export OS_ARCH=""
+RUN_UPDATES=false
+: "${MAIN_SCRIPT:="$0"}"
 
 for arg in "$@"; do
   if [[ $arg == --arch=* ]]; then
-    # shellcheck disable=SC2034
-    OS_ARCH="${arg#--arch=}"
+    export OS_ARCH="${arg#--arch=}"
+  elif [[ $arg == --update ]]; then
+    RUN_UPDATES=true
   fi
 done
 
-DEFAULT_BUILD_FOLDER="_build"
-# shellcheck disable=SC2034
-FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
-VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
-WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
+export DEFAULT_BUILD_FOLDER="_build"
+export FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
+export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
+export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
 
 try_setup_msvc() {
   if (is_windows); then
@@ -125,18 +127,8 @@ import() {
       repo_owner="${temp_remote%%/*}"
       rest="${temp_remote#*/}"
       repo_name="${rest%%/*}"
-      repo_path="${rest#*/}"
-      repo_path="${repo_path%/}"
-      if [[ "$rest" == "$repo_name" ]]; then
-        repo_path=""
-      fi
       remote_source="github.com/$repo_owner/$repo_name"
-      internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master"
-      if [[ -n "$repo_path" ]]; then
-        remote_source="$remote_source/$repo_path"
-        internal_source="$internal_source/$repo_path"
-      fi
-      internal_source="$internal_source/$file_name"
+      internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master/$file_name"
     fi
 
     response=$(curl -L -s -w "%{http_code}" "$internal_source")
@@ -144,11 +136,13 @@ import() {
     content="${response:0:${#response}-3}"
 
     if [[ "$http_code" -ge 400 ]]; then
-      echo "Failed to import $file_name from $remote_source, Server returned $http_code" >&2
-      return 1
+      printf "[error] failed to import: %s\n" "$file_name" >&2
+      printf "        source returned HTTP %s (%s)\n" "$http_code" "$remote_source" >&2
+      exit 1
     elif [[ -z "$content" ]]; then
-      echo "Failed to import $file_name from $remote_source" >&2
-      return 1
+      printf "[error] failed to import: %s\n" "$file_name" >&2
+      printf "        empty content received from %s\n" "$remote_source" >&2
+      exit 1
     fi
   else
     content=$(<"$file_name")
@@ -157,29 +151,184 @@ import() {
   if [[ "$file_name" == *.properties ]]; then
     while IFS= read -r line; do
       if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-        key="${BASH_REMATCH[1]}"
+        raw_key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        key=$(basename "$raw_key" .git)
         key="${key^^}"
         key="${key//-/_}"
-        version_var="${key}_VERSION"
-        source_var="${key}_SOURCE"
+        version_var="LIB_${key}_VERSION"
+        source_var="LIB_${key}_SOURCE"
         if [[ -n "${!version_var}" ]]; then
-          printf "[warn] version for %s already set\n" "${BASH_REMATCH[1]}" >&2
+          printf "[warn] version for %s already set\n" "$raw_key" >&2
           printf "       previous value  : %s\n" "${!version_var}" >&2
           printf "       declared at     : %s\n" "${!source_var}" >&2
           printf "       overriding with : %s\n" "${BASH_REMATCH[2]}" >&2
           printf "       imported from   : %s\n" "$remote_source/$file_name" >&2
         fi
-        value="${BASH_REMATCH[2]}"
+        if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ ]]; then
+          printf "[error] invalid import: %s\n" "$raw_key" >&2
+          printf "        not an accepted source (only \"gitlab.com\" or \"github.com\" allowed)\n" >&2
+          exit 1
+        fi
         export "$version_var=$value"
         export "$source_var=$remote_source/$file_name"
+        export "LIB_${key}_GIT=$raw_key"
+        export "LIB_${key}_PREFIX=$(find_prefix_tag "$raw_key" "$value")"
       fi
     done <<< "$content"
   elif [[ "$file_name" == *.sh ]]; then
     source /dev/stdin <<< "$content"
   else
     echo "Unknown import file type: $file_name" >&2
+    exit 1
+  fi
+
+  local caller_file="${BASH_SOURCE[1]}"
+  local caller_line="${BASH_LINENO[0]}"
+  local last_line
+  if [[ "$caller_file" != "$MAIN_SCRIPT" ]]; then
+      return
+  fi
+  last_line=$(
+    grep -n -E '^[[:space:]]*import\b' "$caller_file" \
+    | cut -d: -f1 \
+    | sort -n \
+    | tail -n1
+  )
+  if [[ "$caller_line" -eq "$last_line" ]] && $RUN_UPDATES; then
+      update_dependencies
+      exit 0
+  fi
+}
+
+update_dependencies() {
+  for var in $(compgen -v | grep 'LIB_.*_SOURCE$'); do
+    local source_var="$var"
+    local version_var="${var/_SOURCE/_VERSION}"
+    local git_var="${var/_SOURCE/_GIT}"
+
+    if [[ -z "${!source_var}" ]] || [[ ! "${!source_var}" =~ ^/ ]]; then
+      continue
+    fi
+
+    echo "[info] checking for updates in ${!git_var}"
+    latest_version="$(find_latest_version "${!git_var}" "${!version_var}")"
+
+    if [[ -z "$latest_version" ]]; then
+      printf "[error] failed to find latest version for %s\n" "${!git_var}" >&2
+      exit 1
+    fi
+
+    if [[ "$latest_version" == "${!version_var}" ]]; then
+      printf "[info] %s is up to date\n" "${!git_var}"
+      continue
+    fi
+
+    printf "[info] %s is outdated\n" "${!git_var}"
+    printf "       current version: %s\n" "${!version_var}"
+    printf "       updating to %s\n" "$latest_version"
+
+    sed -i "s|^${!git_var}=.*|${!git_var}=$latest_version|" "${!source_var/\//}"
+    echo "[info] updated ${!git_var} to $latest_version"
+  done
+}
+
+git_api_request() {
+  local repo="$1"
+  local url_api
+
+  git_loc="${repo/github.com\//}"
+  git_loc="${git_loc/gitlab.com\//}"
+
+  if [[ "$repo" =~ ^gitlab.com* ]]; then
+    url_api="https://gitlab.com/api/v4/projects/$(url_encode "$git_loc")/repository/tags"
+  else
+    url_api="https://api.github.com/repos/${repo}/tags?per_page=100"
+  fi
+
+  response=$(curl -L -s -w "%{http_code}" "$url_api")
+  http_code="${response: -3}"
+  content="${response:0:${#response}-3}"
+
+  if [[ "$http_code" -ge 400 ]]; then
     return 1
   fi
+
+  curl -s "$url_api" | jq -r '.[].name'
+}
+
+find_prefix_tag() {
+  local repo="$1"
+  local base_version="$2"
+
+  cache_file="prefixes.cache"
+
+  if [[ -f "$cache_file" ]]; then
+    local cached_prefix
+    cached_prefix=$(grep "^$repo=" "$cache_file" | cut -d= -f2-)
+    if [[ -n "$cached_prefix" ]]; then
+      echo "$cached_prefix"
+      return 0
+    fi
+  fi
+
+  tags=$(git_api_request "$repo")
+  matching_tags=$(echo "$tags" | grep "$base_version")
+
+  if [[ -z "$matching_tags" ]]; then
+    printf "[error] no matching tags found for %s\n" "$base_version" >&2
+    return 1
+  fi
+  prefix=${matching_tags/%$base_version/}
+  echo "$repo=$prefix" >> "$cache_file"
+  echo "$prefix"
+}
+
+find_latest_version() {
+  local repo="$1"
+  local base_version="$2"
+
+  tags=$(git_api_request "$repo")
+  matching_tags=$(echo "$tags" | grep "$base_version")
+  if [[ -z "$matching_tags" ]]; then
+    printf "[error] no matching tags found for %s\n" "$base_version" >&2
+    return 1
+  fi
+  prefix="${matching_tags/%$base_version/}"
+  echo "$tags" \
+    | grep "^$prefix" \
+    | while read -r tag; do
+        ver="${tag/$prefix/}"
+        if [[ "$ver" == "$base_version" || "$ver" > "$base_version" ]] && [[ ! "$ver" =~ -rc[0-9]+$ ]]; then
+          echo "$ver"
+        fi
+      done \
+    | sort -V \
+    | awk 'END { print $1 }'
+}
+
+url_encode() {
+  local string="$1"
+  local strlen=${#string}
+  local encoded=""
+  for (( pos=0 ; pos<strlen ; pos++ )); do
+    c=${string:$pos:1}
+    case "$c" in
+      [a-zA-Z0-9.~_-]) encoded+="$c" ;;
+      *) printf -v hex '%%%02X' "'$c"
+         encoded+="$hex"
+    esac
+  done
+  echo "$encoded"
+}
+
+dependency_version() {
+  local key="$1"
+  key="${key^^}"
+  key="${key//-/_}"
+  local tag_prefix="LIB_${key}_PREFIX"
+  local version_var="LIB_${key}_VERSION"
+  echo "${!tag_prefix}${!version_var}"
 }
 
 is_windows() {
@@ -333,11 +482,25 @@ configure_autogen() {
 
 build_and_install() {
   local repo_url=$1
+  if [[ "$repo_url" =~ ^http(s)* ]]; then
+    local branch=$2
+    local build_type=$3
+    shift 3
+  else
+    local lib_name="$1"
+    lib_name="${lib_name^^}"
+    lib_name="${lib_name//-/_}"
+    local git_var="LIB_${lib_name}_GIT"
+    local tag_prefix="LIB_${lib_name}_PREFIX"
+    local version_var="LIB_${lib_name}_VERSION"
+    repo_url="https://${!git_var}.git"
+    local branch="${!tag_prefix}${!version_var}"
+    local build_type=$2
+    shift 2
+  fi
+
   local repo_name
   repo_name=$(basename "$repo_url" .git)
-  local branch=$2
-  local build_type=$3
-  shift 3
 
   local update_submodules=false
   local skip_build=false
