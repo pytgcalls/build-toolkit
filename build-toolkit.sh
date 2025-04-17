@@ -162,6 +162,9 @@ import() {
     fi
   elif [[ "$file_name" == *.sh ]]; then
     source /dev/stdin <<< "$content"
+  else
+    echo "Unknown import file type: $file_name" >&2
+    return 1
   fi
 }
 
