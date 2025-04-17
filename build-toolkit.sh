@@ -161,6 +161,7 @@ import() {
     else
       LIBRARY_VERSIONS_INDEX=$(echo -e "$LIBRARY_VERSIONS_INDEX\n$content" | awk '!seen[$0]++')
     fi
+    update_versions
   elif [[ "$file_name" == *.sh ]]; then
     source /dev/stdin <<< "$content"
   else
@@ -169,8 +170,16 @@ import() {
   fi
 }
 
-get_version() {
-    grep "^$1=" <<< "$LIBRARY_VERSIONS_INDEX" | cut -d '=' -f2
+update_versions() {
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      key="${key^^}"
+      key="${key//-/_}_VERSION"
+      value="${BASH_REMATCH[2]}"
+      export "$key=$value"
+    fi
+  done <<< "$LIBRARY_VERSIONS_INDEX"
 }
 
 is_windows() {
