@@ -22,7 +22,6 @@ export BUILD_KIT_DIR
 BUILD_KIT_DIR="$(pwd)/.buildkit"
 export BUILD_KIT_CACHE="$BUILD_KIT_DIR/cache"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
-export FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
 export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
 export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
 
@@ -178,7 +177,7 @@ import() {
           echo "       overriding with : $value" >&2
           echo "       imported from   : $remote_source/$file_name" >&2
         fi
-        if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ ]]; then
+        if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
           echo "[error] Invalid import: $raw_key" >&2
           echo "        not an accepted source (only \"gitlab.com\" or \"github.com\" allowed)" >&2
           exit 1
@@ -258,10 +257,13 @@ git_api_request() {
 
   git_loc="${repo/github.com\//}"
   git_loc="${git_loc/gitlab.com\//}"
+  git_loc="${git_loc/bitbucket.org\//}"
   headers=()
 
   if [[ "$repo" =~ ^gitlab.com* ]]; then
     base_url="https://gitlab.com/api/v4/projects/$(url_encode "$git_loc")/repository/tags?per_page=100&page="
+  elif [[ "$repo" =~ ^bitbucket.org.* ]]; then
+    base_url="https://api.bitbucket.org/2.0/repositories/${git_loc}/refs/tags?page="
   else
     base_url="https://api.github.com/repos/${git_loc}/tags?per_page=100&page="
     [[ -n "$GITHUB_TOKEN" ]] && headers+=(-H "Authorization: token $GITHUB_TOKEN")
@@ -281,6 +283,11 @@ git_api_request() {
 
     if [[ "$repo" =~ ^gitlab.com* ]]; then
       next_page=$(echo "$response" | grep -i "X-Next-Page" | awk '{print $2}')
+    elif [[ "$repo" =~ ^bitbucket.org* ]]; then
+      next_page=$(echo "$response" | grep -o '"next": *"[^"]*"' | sed -E 's/.*"next": *"([^"]+)".*/\1/')
+      if [[ -n "$next_page" ]]; then
+        next_page=1
+      fi
     else
       length=$(echo "$content" | tr -d '\n' | grep -oP '{.*?}' | wc -l)
       if [[ "$length" -eq 100 ]]; then
@@ -326,7 +333,6 @@ retrieve_prefix() {
   local base_version="$2"
   matching_tags=$(echo "$tags" | grep "$base_version" | head -n 1)
   if [[ -z "$matching_tags" ]]; then
-    echo "[error] No matching tags found for $base_version" >&2
     return 1
   fi
   echo "$matching_tags" | sed -E 's/[0-9]+\.[0-9]+.*//'
@@ -346,6 +352,11 @@ find_prefix_tag() {
 
   tags=$(git_api_request "$repo")
   prefix=$(retrieve_prefix "$tags" "$base_version")
+  ret_code=$?
+  if [[ $ret_code -ne 0 ]]; then
+    echo "[error] Failed to find prefix for $repo" >&2
+    return 1
+  fi
 
   write_cache_prefix "$repo" "$prefix"
   echo "$prefix"
