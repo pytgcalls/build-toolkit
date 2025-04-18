@@ -655,7 +655,11 @@ build_and_install() {
         new_args+=("${tmp[@]}")
       fi
     else
-      new_args+=("$arg")
+      if needs_quotes "$arg"; then
+        new_args+=("\"$arg\"")
+      else
+        new_args+=("$arg")
+      fi
     fi
   done
 
@@ -700,7 +704,7 @@ build_and_install() {
         new_args+=("--enable-static" "--disable-shared" "--enable-pic")
       fi
       echo "[info] Running autogen.sh for $repo_name with options: ${new_args[*]}" >&2
-      run ./autogen.sh --prefix="$build_dir" "${new_args[@]}"
+      run ./autogen.sh --prefix="\"$build_dir\"" "${new_args[@]}"
       ;;
     configure|configure-static)
       if $is_static; then
@@ -708,14 +712,14 @@ build_and_install() {
       fi
       echo "[info] Running configure for $repo_name with options: ${new_args[*]}" >&2
       configure_autogen
-      run ./configure --prefix="$build_dir" "${new_args[@]}"
+      run ./configure --prefix="\"$build_dir\"" "${new_args[@]}"
       ;;
     meson|meson-static)
       if $is_static; then
         new_args+=("--default-library=static")
       fi
       echo "[info] Running meson for $repo_name with options: ${new_args[*]}" >&2
-      run python -m mesonbuild.mesonmain setup build --prefix="$build_dir" --libdir=lib --buildtype=release "${new_args[@]}"
+      run python -m mesonbuild.mesonmain setup build --prefix="\"$build_dir\"" --libdir=lib --buildtype=release "${new_args[@]}"
       ;;
     cmake|cmake-static)
       build_tool=$(process_args get "-G" "${new_args[@]}")
@@ -728,7 +732,7 @@ build_and_install() {
         cmake_options+=("-DBUILD_SHARED_LIBS=OFF")
       fi
       echo "[info] Running cmake with options: ${cmake_options[*]}" >&2
-      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$build_dir" -G "$build_tool" "${cmake_options[@]}"
+      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="\"$build_dir\"" -G "\"$build_tool\"" "${cmake_options[@]}"
       ;;
     make)
       ;;
@@ -753,6 +757,11 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
+}
+
+needs_quotes() {
+  local val="$1"
+  [[ "$val" =~ [[:space:]\$\&\|\>\<\;\(\)\*\'\"] ]]
 }
 
 process_args() {
