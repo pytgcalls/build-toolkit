@@ -161,6 +161,11 @@ import() {
         raw_key="${BASH_REMATCH[1]}"
         value="${BASH_REMATCH[2]}"
         value="${value//$'\r'/}"
+         if [[ "$raw_key" =~ \.git$ ]]; then
+           raw_key="${raw_key%.git}"
+           echo "[warn] Trailing '.git' suffix detected in $raw_key" >&2
+           echo "       This suffix is not required for the import" >&2
+         fi
         if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
           echo "[error] Invalid import: $raw_key" >&2
           echo "        invalid characters in import declaration" >&2
