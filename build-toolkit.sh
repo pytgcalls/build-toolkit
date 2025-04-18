@@ -295,7 +295,7 @@ git_api_request() {
 write_cache_prefix() {
   local repo="$1"
   local prefix="$2"
-  if [[ -f "$BUILD_KIT_CACHE" ]]; then
+  if [[ -f "$BUILD_KIT_CACHE" ]] && grep -q "^$repo=" "$BUILD_KIT_CACHE"; then
     sed -i "s|^$repo=.*|$repo=$prefix|" "$BUILD_KIT_CACHE"
   else
     echo "$repo=$prefix" >> "$BUILD_KIT_CACHE"
@@ -312,7 +312,7 @@ load_cache_prefix() {
        return 0
      fi
   fi
-  echo ""
+  return 1
 }
 
 retrieve_prefix() {
@@ -323,8 +323,7 @@ retrieve_prefix() {
     printf "[error] no matching tags found for %s\n" "$base_version" >&2
     return 1
   fi
-  matching_tags="${matching_tags/%$base_version/}"
-  echo "${matching_tags//[0-9.]/}"
+  echo "$matching_tags" | sed -E 's/^([a-zA-Z.-]+)*\.*([0-9]+\.([0-9]+)*)*.*/\1/g'
 }
 
 find_prefix_tag() {
@@ -332,10 +331,12 @@ find_prefix_tag() {
   local base_version="$2"
 
   prefix=$(load_cache_prefix "$repo")
-  if [[ -n "$prefix" ]]; then
+  ret_code=$?
+  if [[ $ret_code -eq 0 ]]; then
     echo "$prefix"
     return 0
   fi
+  echo "[info] importing $repo" >&2
 
   tags=$(git_api_request "$repo")
   prefix=$(retrieve_prefix "$tags" "$base_version")
@@ -348,6 +349,7 @@ find_latest_version() {
   local repo="$1"
   local base_version="$2"
   local void_prefix
+  local suffix
 
   tags=$(git_api_request "$repo")
   prefix=$(load_cache_prefix "$repo")
@@ -360,8 +362,14 @@ find_latest_version() {
     void_prefix="[0-9]"
   fi
 
+  if [[ "$base_version" =~ [0-9]$ ]]; then
+    suffix=".*[0-9]$"
+  else
+    suffix=".*-$(echo "$base_version" | sed -E 's/.*[0-9]+-//')$"
+  fi
+
   echo "$tags" \
-    | grep "^$prefix$void_prefix" \
+    | grep "^$prefix$void_prefix$suffix" \
     | while read -r tag; do
         ver="${tag/$prefix/}"
         if [[ "$ver" == "$base_version" || "$ver" > "$base_version" ]] && [[ ! "$ver" =~ -rc[0-9]+$ ]]; then
