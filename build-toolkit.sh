@@ -36,7 +36,7 @@ try_setup_msvc() {
     export PATH="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/bin/Hostx64/x64:$PATH"
     export LIB="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/lib/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/um/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/ucrt/x64"
     export INCLUDE="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/include:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/ucrt:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/um:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/shared"
-    echo "Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION"
+    echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
   fi
 }
 
@@ -56,7 +56,7 @@ os_lib_format() {
       is_static=false
       ;;
     *)
-      echo "Unknown library type: $1" >&2
+      echo "[error] Unknown library type: $1" >&2
       exit 1
       ;;
   esac
@@ -79,7 +79,7 @@ os_lib_format() {
       echo "lib$2.dylib"
     fi
   else
-    echo "Unknown OS: $(uname -s)" >&2
+    echo "[error] Unknown OS: $(uname -s)" >&2
     exit 1
   fi
 }
@@ -101,7 +101,7 @@ import() {
       remote_source="$arg"
       break
     else
-      echo "Invalid argument: $arg" >&2
+      echo "[error] Invalid argument: $arg" >&2
       return 1
     fi
   done
@@ -143,12 +143,12 @@ import() {
     content="${response:0:${#response}-3}"
 
     if [[ "$http_code" -ge 400 ]]; then
-      printf "[error] failed to import: %s\n" "$file_name" >&2
-      printf "        source returned HTTP %s (%s)\n" "$http_code" "$remote_source" >&2
+      echo "[error] Failed to import: $file_name" >&2
+      echo "        source returned HTTP $http_code ($remote_source)" >&2
       exit 1
     elif [[ -z "$content" ]]; then
-      printf "[error] failed to import: %s\n" "$file_name" >&2
-      printf "        empty content received from %s\n" "$remote_source" >&2
+      echo "[error] Failed to import: $file_name" >&2
+      echo "        empty content received from $remote_source" >&2
       exit 1
     fi
   else
@@ -161,8 +161,8 @@ import() {
         raw_key="${BASH_REMATCH[1]}"
         value="${BASH_REMATCH[2]}"
         if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
-          printf "[error] invalid import: %s\n" "$raw_key" >&2
-          printf "        invalid characters in import declaration\n" >&2
+          echo "[error] Invalid import: $raw_key" >&2
+          echo "        invalid characters in import declaration" >&2
           exit 1
         fi
         key=$(basename "$raw_key" .git)
@@ -171,15 +171,15 @@ import() {
         version_var="LIB_${key}_VERSION"
         source_var="LIB_${key}_SOURCE"
         if [[ -n "${!version_var}" ]]; then
-          printf "[warn] version for %s already set\n" "$raw_key" >&2
-          printf "       previous value  : %s\n" "${!version_var}" >&2
-          printf "       declared at     : %s\n" "${!source_var}" >&2
-          printf "       overriding with : %s\n" "$value" >&2
-          printf "       imported from   : %s\n" "$remote_source/$file_name" >&2
+          echo "[warn] version for $raw_key already set" >&2
+          echo "       previous value  : ${!version_var}" >&2
+          echo "       declared at     : ${!source_var}" >&2
+          echo "       overriding with : $value" >&2
+          echo "       imported from   : $remote_source/$file_name" >&2
         fi
         if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ ]]; then
-          printf "[error] invalid import: %s\n" "$raw_key" >&2
-          printf "        not an accepted source (only \"gitlab.com\" or \"github.com\" allowed)\n" >&2
+          echo "[error] Invalid import: $raw_key" >&2
+          echo "        not an accepted source (only \"gitlab.com\" or \"github.com\" allowed)" >&2
           exit 1
         fi
         prefix=$(find_prefix_tag "$raw_key" "$value")
@@ -196,7 +196,7 @@ import() {
   elif [[ "$file_name" == *.sh || "$file_name" == *.env ]]; then
     source /dev/stdin <<< "$content"
   else
-    echo "Unknown import file type: $file_name" >&2
+    echo "[error] Unknown import file type: $file_name" >&2
     exit 1
   fi
 
@@ -228,25 +228,25 @@ update_dependencies() {
       continue
     fi
 
-    echo "[info] checking for updates in ${!git_var}"
+    echo "[info] Checking for updates in ${!git_var}" >&2
     latest_version="$(find_latest_version "${!git_var}" "${!version_var}")"
 
     if [[ -z "$latest_version" ]]; then
-      printf "[error] failed to find latest version for %s\n" "${!git_var}" >&2
+      echo "[error] Failed to find latest version for ${!git_var}" >&2
       exit 1
     fi
 
     if [[ "$latest_version" == "${!version_var}" ]]; then
-      printf "[info] %s is up to date\n" "${!git_var}"
+      echo "[info] ${!git_var} is up to date" >&2
       continue
     fi
 
-    printf "[info] %s is outdated\n" "${!git_var}"
-    printf "       current version: %s\n" "${!version_var}"
-    printf "       updating to %s\n" "$latest_version"
+    echo "[info] ${!git_var} is outdated" >&2
+    echo "       Current version: ${!version_var}" >&2
+    echo "       Updating to $latest_version" >&2
 
     sed -i "s|^${!git_var}=.*|${!git_var}=$latest_version|" "${!source_var/\//}"
-    echo "[info] updated ${!git_var} to $latest_version"
+    echo "[info] Updated ${!git_var} to $latest_version" >&2
   done
 }
 
@@ -325,7 +325,7 @@ retrieve_prefix() {
   local base_version="$2"
   matching_tags=$(echo "$tags" | grep "$base_version" | head -n 1)
   if [[ -z "$matching_tags" ]]; then
-    printf "[error] no matching tags found for %s\n" "$base_version" >&2
+    echo "[error] No matching tags found for $base_version" >&2
     return 1
   fi
   echo "$matching_tags" | sed -E 's/[0-9]+\.[0-9]+.*//'
@@ -341,7 +341,7 @@ find_prefix_tag() {
     echo "$prefix"
     return 0
   fi
-  echo "[info] importing $repo" >&2
+  echo "[info] Importing $repo" >&2
 
   tags=$(git_api_request "$repo")
   prefix=$(retrieve_prefix "$tags" "$base_version")
@@ -517,11 +517,11 @@ run() {
       new_args+=("$arg")
     fi
   done
-  echo ">>> ${new_args[*]}"
+  echo ">>> ${new_args[*]}" >&2
   "${new_args[@]}"
   EXIT_CODE=$?
   if [[ ! ${IGNORE_ERRORS[*]} =~ $EXIT_CODE ]]; then
-      echo "Error while executing ${new_args[*]} $EXIT_CODE ${IGNORE_ERRORS[*]}" >&2
+      echo "[error] Error while executing ${new_args[*]} $EXIT_CODE ${IGNORE_ERRORS[*]}" >&2
       exit $EXIT_CODE
   fi
 }
@@ -542,7 +542,7 @@ require() {
       run python -m pip install meson ninja --root-user-action=ignore
       ;;
     *)
-      echo "Unknown requirement: $1" >&2
+      echo "[error] Unknown requirement: $1" >&2
       exit 1
       ;;
   esac
@@ -573,7 +573,7 @@ build_and_install() {
     local version_var="LIB_${lib_name}_VERSION"
     repo_url="https://${!git_var}.git"
     if [[ -z "${!git_var}" ]]; then
-      echo "No dependency found for $1" >&2
+      echo "[error] No dependency found for $1" >&2
       exit 1
     fi
     local branch="${!tag_prefix}${!version_var}"
@@ -644,39 +644,39 @@ build_and_install() {
 
   case "$build_type" in
     autogen)
-      echo "Running autogen.sh for $repo_name with options: ${new_args[*]}"
+      echo "[info] Running autogen.sh for $repo_name with options: ${new_args[*]}" >&2
       run ./autogen.sh --prefix=/usr "${new_args[@]}"
       ;;
     autogen-static)
-      echo "Running autogen.sh for $repo_name with static build options: ${new_args[*]}"
+      echo "[info] Running autogen.sh for $repo_name with static build options: ${new_args[*]}" >&2
       run ./autogen.sh --enable-static --disable-shared --enable-pic "${new_args[@]}"
       ;;
     configure)
-      echo "Running configure for $repo_name with options: ${new_args[*]}"
+      echo "[info] Running configure for $repo_name with options: ${new_args[*]}" >&2
       configure_autogen
       run ./configure --prefix=/usr "${new_args[@]}"
       ;;
     configure-static)
-      echo "Running configure for $repo_name with static build options: ${new_args[*]}"
+      echo "[info] Running configure for $repo_name with static build options: ${new_args[*]}" >&2
       configure_autogen
       run ./configure --enable-static --disable-shared --enable-pic "${new_args[@]}"
       ;;
     meson)
-      echo "Running meson for $repo_name with options: ${new_args[*]}"
+      echo "[info] Running meson for $repo_name with options: ${new_args[*]}" >&2
       run python -m mesonbuild.mesonmain setup build --prefix=/usr "${new_args[@]}"
       ;;
     meson-static)
-      echo "Running meson for $repo_name with static build options: ${new_args[*]}"
+      echo "[info] Running meson for $repo_name with static build options: ${new_args[*]}" >&2
       run python -m mesonbuild.mesonmain setup build --libdir=lib --buildtype=release --default-library=static "${new_args[@]}"
       ;;
     cmake)
-      echo "Running cmake with options: ${new_args[*]}"
+      echo "[info] Running cmake with options: ${new_args[*]}" >&2
       run cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -G Ninja "${new_args[@]}"
       ;;
     make)
       ;;
     *)
-      echo "Unknown build type: $build_type" >&2
+      echo "[error] Unknown build type: $build_type" >&2
       exit 1
       ;;
   esac
