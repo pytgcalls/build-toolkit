@@ -328,7 +328,7 @@ retrieve_prefix() {
     printf "[error] no matching tags found for %s\n" "$base_version" >&2
     return 1
   fi
-  echo "$matching_tags" | sed -E 's/^([a-zA-Z.-]+)*\.*([0-9]+\.([0-9]+)*)*.*/\1/g'
+  echo "$matching_tags" | sed -E 's/[0-9]+\.[0-9]+.*//'
 }
 
 find_prefix_tag() {
