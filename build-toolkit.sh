@@ -160,6 +160,7 @@ import() {
       if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
         raw_key="${BASH_REMATCH[1]}"
         value="${BASH_REMATCH[2]}"
+        value="${value//$'\r'/}"
         if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
           echo "[error] Invalid import: $raw_key" >&2
           echo "        invalid characters in import declaration" >&2
