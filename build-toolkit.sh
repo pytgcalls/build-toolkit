@@ -5,6 +5,7 @@ export ACLOCAL_PATH=/usr/share/aclocal
 
 export OS_ARCH=""
 RUN_UPDATES=false
+RUN_NO_CACHE=false
 : "${MAIN_SCRIPT:="$0"}"
 
 for arg in "$@"; do
@@ -12,10 +13,13 @@ for arg in "$@"; do
     export OS_ARCH="${arg#--arch=}"
   elif [[ $arg == --update ]]; then
     RUN_UPDATES=true
+  elif [[ $arg == --no-cache ]]; then
+    RUN_NO_CACHE=true
   fi
 done
 
 export BUILD_KIT_DIR=".buildkit"
+export BUILD_KIT_CACHE="$BUILD_KIT_DIR/cache"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
 export FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
 export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
@@ -287,6 +291,30 @@ git_api_request() {
   done
 }
 
+
+write_cache_prefix() {
+  local repo="$1"
+  local prefix="$2"
+  if [[ -f "$BUILD_KIT_CACHE" ]]; then
+    sed -i "s|^$repo=.*|$repo=$prefix|" "$BUILD_KIT_CACHE"
+  else
+    echo "$repo=$prefix" >> "$BUILD_KIT_CACHE"
+  fi
+}
+
+load_cache_prefix() {
+  local repo="$1"
+  if [[ -f "$BUILD_KIT_CACHE" ]] && ! $RUN_NO_CACHE; then
+    local cached_prefix
+     if grep -q "^$repo=" "$BUILD_KIT_CACHE"; then
+       cached_prefix=$(grep "^$repo=" "$BUILD_KIT_CACHE" | cut -d= -f2-)
+       echo "$cached_prefix"
+       return 0
+     fi
+  fi
+  echo ""
+}
+
 retrieve_prefix() {
   local tags="$1"
   local base_version="$2"
@@ -295,27 +323,24 @@ retrieve_prefix() {
     printf "[error] no matching tags found for %s\n" "$base_version" >&2
     return 1
   fi
-  echo "${matching_tags/%$base_version/}"
+  matching_tags="${matching_tags/%$base_version/}"
+  echo "${matching_tags//[0-9.]/}"
 }
 
 find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
 
-  cache_file="$BUILD_KIT_DIR/cache"
-  if [[ -f "$cache_file" ]]; then
-    local cached_prefix
-     if grep -q "^$repo=" "$cache_file"; then
-       cached_prefix=$(grep "^$repo=" "$cache_file" | cut -d= -f2-)
-       echo "$cached_prefix"
-       return 0
-     fi
+  prefix=$(load_cache_prefix "$repo")
+  if [[ -n "$prefix" ]]; then
+    echo "$prefix"
+    return 0
   fi
 
   tags=$(git_api_request "$repo")
   prefix=$(retrieve_prefix "$tags" "$base_version")
 
-  echo "$repo=$prefix" >> "$cache_file"
+  write_cache_prefix "$repo" "$prefix"
   echo "$prefix"
 }
 
@@ -325,10 +350,13 @@ find_latest_version() {
   local void_prefix
 
   tags=$(git_api_request "$repo")
-  prefix=$(retrieve_prefix "$tags" "$base_version")
+  prefix=$(load_cache_prefix "$repo")
+  if [[ -z "$prefix" ]]; then
+    prefix=$(retrieve_prefix "$tags" "$base_version")
+    write_cache_prefix "$repo" "$prefix"
+  fi
 
   if [[ "$base_version" =~ ^[0-9] ]]; then
-    prefix=""
     void_prefix="[0-9]"
   fi
 
