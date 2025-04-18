@@ -588,6 +588,7 @@ build_and_install() {
   local skip_build=false
   local setup_commands=""
   local cleanup_commands=""
+  local build_dir=""
   local new_args=()
   current_dir="$(pwd)"
 
@@ -600,6 +601,8 @@ build_and_install() {
       setup_commands="${arg#--setup-commands=}"
     elif [[ "$arg" == --cleanup-commands* ]]; then
       cleanup_commands="${arg#--cleanup-commands=}"
+    elif [[ "$arg" == --prefix=* || "$arg" == -DCMAKE_INSTALL_PREFIX=* ]];then
+      build_dir="${arg#*=}"
     elif [[ "$arg" =~ --(windows|linux|macos).*=.* ]]; then
       platforms="${arg%%=*}"
       platforms="${platforms#--}"
@@ -643,36 +646,44 @@ build_and_install() {
       run "${setup_commands_array[@]}"
   fi
 
+  if [ -z "$build_dir" ]; then
+    if [[ $build_type =~ -static$ ]]; then
+      build_dir="$DEFAULT_BUILD_FOLDER/$repo_name/build"
+    else
+      build_dir="/usr"
+    fi
+  fi
+
   case "$build_type" in
     autogen)
       echo "[info] Running autogen.sh for $repo_name with options: ${new_args[*]}" >&2
-      run ./autogen.sh --prefix=/usr "${new_args[@]}"
+      run ./autogen.sh --prefix="$build_dir" "${new_args[@]}"
       ;;
     autogen-static)
       echo "[info] Running autogen.sh for $repo_name with static build options: ${new_args[*]}" >&2
-      run ./autogen.sh --enable-static --disable-shared --enable-pic "${new_args[@]}"
+      run ./autogen.sh --prefix="$build_dir" --enable-static --disable-shared --enable-pic "${new_args[@]}"
       ;;
     configure)
       echo "[info] Running configure for $repo_name with options: ${new_args[*]}" >&2
       configure_autogen
-      run ./configure --prefix=/usr "${new_args[@]}"
+      run ./configure --prefix="$build_dir" "${new_args[@]}"
       ;;
     configure-static)
       echo "[info] Running configure for $repo_name with static build options: ${new_args[*]}" >&2
       configure_autogen
-      run ./configure --enable-static --disable-shared --enable-pic "${new_args[@]}"
+      run ./configure --prefix="$build_dir" --enable-static --disable-shared --enable-pic "${new_args[@]}"
       ;;
     meson)
       echo "[info] Running meson for $repo_name with options: ${new_args[*]}" >&2
-      run python -m mesonbuild.mesonmain setup build --prefix=/usr "${new_args[@]}"
+      run python -m mesonbuild.mesonmain setup build --prefix="$build_dir" "${new_args[@]}"
       ;;
     meson-static)
       echo "[info] Running meson for $repo_name with static build options: ${new_args[*]}" >&2
-      run python -m mesonbuild.mesonmain setup build --libdir=lib --buildtype=release --default-library=static "${new_args[@]}"
+      run python -m mesonbuild.mesonmain setup build --prefix="$build_dir" --libdir=lib --buildtype=release --default-library=static "${new_args[@]}"
       ;;
     cmake)
       echo "[info] Running cmake with options: ${new_args[*]}" >&2
-      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -G Ninja "${new_args[@]}"
+      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$build_dir" -G Ninja "${new_args[@]}"
       ;;
     make)
       ;;
