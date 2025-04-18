@@ -287,6 +287,17 @@ git_api_request() {
   done
 }
 
+retrieve_prefix() {
+  local tags="$1"
+  local base_version="$2"
+  matching_tags=$(echo "$tags" | grep "$base_version" | head -n 1)
+  if [[ -z "$matching_tags" ]]; then
+    printf "[error] no matching tags found for %s\n" "$base_version" >&2
+    return 1
+  fi
+  echo "${matching_tags/%$base_version/}"
+}
+
 find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
@@ -302,17 +313,8 @@ find_prefix_tag() {
   fi
 
   tags=$(git_api_request "$repo")
-  if ! [[ "$tags" ]]; then
-    printf "[error] failed to fetch tags for %s\n" "$repo" >&2
-    return 1
-  fi
-  matching_tags=$(echo "$tags" | grep "$base_version")
+  prefix=$(retrieve_prefix "$tags" "$base_version")
 
-  if [[ -z "$matching_tags" ]]; then
-    printf "[error] no matching tags found for %s\n" "$base_version" >&2
-    return 1
-  fi
-  prefix=${matching_tags/%$base_version/}
   echo "$repo=$prefix" >> "$cache_file"
   echo "$prefix"
 }
@@ -320,17 +322,18 @@ find_prefix_tag() {
 find_latest_version() {
   local repo="$1"
   local base_version="$2"
+  local void_prefix
 
   tags=$(git_api_request "$repo")
+  prefix=$(retrieve_prefix "$tags" "$base_version")
 
-  matching_tags=$(echo "$tags" | grep "$base_version")
-  if [[ -z "$matching_tags" ]]; then
-    printf "[error] no matching tags found for %s\n" "$base_version" >&2
-    return 1
+  if [[ "$base_version" =~ ^[0-9] ]]; then
+    prefix=""
+    void_prefix="[0-9]"
   fi
-  prefix="${matching_tags/%$base_version/}"
+
   echo "$tags" \
-    | grep "^$prefix" \
+    | grep "^$prefix$void_prefix" \
     | while read -r tag; do
         ver="${tag/$prefix/}"
         if [[ "$ver" == "$base_version" || "$ver" > "$base_version" ]] && [[ ! "$ver" =~ -rc[0-9]+$ ]]; then
