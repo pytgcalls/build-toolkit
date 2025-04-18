@@ -1,4 +1,5 @@
 .idea
+.env
 test.sh
 .buildkit
 libraries.properties

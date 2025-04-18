@@ -184,7 +184,7 @@ import() {
         export "LIB_${key}_PREFIX=$prefix"
       fi
     done <<< "$content"
-  elif [[ "$file_name" == *.sh ]]; then
+  elif [[ "$file_name" == *.sh || "$file_name" == *.env ]]; then
     source /dev/stdin <<< "$content"
   else
     echo "Unknown import file type: $file_name" >&2
