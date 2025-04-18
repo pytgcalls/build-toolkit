@@ -589,6 +589,7 @@ build_and_install() {
   local setup_commands=""
   local cleanup_commands=""
   local new_args=()
+  current_dir="$(pwd)"
 
   for arg in "$@"; do
     if [[ "$arg" == "--update-submodules" ]]; then
@@ -695,5 +696,5 @@ build_and_install() {
       eval "cleanup_commands_array=($cleanup_commands)"
       run "${cleanup_commands_array[@]}"
   fi
-  cd ../../.. || exit 1
+  cd "$current_dir" || exit 1
 }
