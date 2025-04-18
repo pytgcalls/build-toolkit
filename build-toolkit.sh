@@ -171,7 +171,20 @@ import() {
           echo "        invalid characters in import declaration" >&2
           exit 1
         fi
-        key=$(basename "$raw_key" .git)
+        if [[ "$value" =~ ^\$ ]]; then
+          var_ref="${value^^}"
+          var_ref="${var_ref//-/_}"
+          var_ref="LIB_${var_ref#\$}_VERSION"
+          var_ref="${!var_ref}"
+          if [[ -n "$var_ref" ]]; then
+            value="$var_ref"
+          else
+            echo "[error] Invalid import: $raw_key" >&2
+            echo "        invalid import reference in import declaration" >&2
+            exit 1
+          fi
+        fi
+        key=$(basename "$raw_key")
         key="${key^^}"
         key="${key//-/_}"
         version_var="LIB_${key}_VERSION"
