@@ -18,7 +18,8 @@ for arg in "$@"; do
   fi
 done
 
-export BUILD_KIT_DIR=".buildkit"
+export BUILD_KIT_DIR
+BUILD_KIT_DIR="$(pwd)/.buildkit"
 export BUILD_KIT_CACHE="$BUILD_KIT_DIR/cache"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
 export FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
