@@ -262,15 +262,20 @@ git_api_request() {
       return 1
     fi
 
-    echo "$content" | jq -r '.[].name'
+    echo "$content" | grep -oP '"name":\s*"\K[^"]+'
 
     if [[ "$repo" =~ ^gitlab.com* ]]; then
       next_page=$(echo "$response" | grep -i "X-Next-Page" | awk '{print $2}')
     else
-      next_page=$(echo "$content" | jq -r 'if length == 100 then 1 else 0 end')
+      length=$(echo "$content" | tr -d '\n' | grep -oP '{.*?}' | wc -l)
+      if [[ "$length" -eq 100 ]]; then
+        next_page=1
+      else
+        next_page=0
+      fi
     fi
 
-    if [[ "$next_page" -eq "0" ]]; then
+    if [[ "$next_page" -eq 0 ]]; then
       break
     fi
     page=$((page + 1))
