@@ -160,6 +160,11 @@ import() {
       if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
         raw_key="${BASH_REMATCH[1]}"
         value="${BASH_REMATCH[2]}"
+        if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+          printf "[error] invalid import: %s\n" "$raw_key" >&2
+          printf "        invalid characters in import declaration\n" >&2
+          exit 1
+        fi
         key=$(basename "$raw_key" .git)
         key="${key^^}"
         key="${key//-/_}"
@@ -169,7 +174,7 @@ import() {
           printf "[warn] version for %s already set\n" "$raw_key" >&2
           printf "       previous value  : %s\n" "${!version_var}" >&2
           printf "       declared at     : %s\n" "${!source_var}" >&2
-          printf "       overriding with : %s\n" "${BASH_REMATCH[2]}" >&2
+          printf "       overriding with : %s\n" "$value" >&2
           printf "       imported from   : %s\n" "$remote_source/$file_name" >&2
         fi
         if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ ]]; then
