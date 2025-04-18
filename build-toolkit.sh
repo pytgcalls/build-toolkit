@@ -173,10 +173,15 @@ import() {
           printf "        not an accepted source (only \"gitlab.com\" or \"github.com\" allowed)\n" >&2
           exit 1
         fi
+        prefix=$(find_prefix_tag "$raw_key" "$value")
+        ret_code=$?
+        if [[ $ret_code -ne 0 ]]; then
+          exit 1
+        fi
         export "$version_var=$value"
         export "$source_var=$remote_source/$file_name"
         export "LIB_${key}_GIT=$raw_key"
-        export "LIB_${key}_PREFIX=$(find_prefix_tag "$raw_key" "$value")"
+        export "LIB_${key}_PREFIX=$prefix"
       fi
     done <<< "$content"
   elif [[ "$file_name" == *.sh ]]; then
@@ -297,6 +302,10 @@ find_prefix_tag() {
   fi
 
   tags=$(git_api_request "$repo")
+  if ! [[ "$tags" ]]; then
+    printf "[error] failed to fetch tags for %s\n" "$repo" >&2
+    return 1
+  fi
   matching_tags=$(echo "$tags" | grep "$base_version")
 
   if [[ -z "$matching_tags" ]]; then
@@ -313,6 +322,7 @@ find_latest_version() {
   local base_version="$2"
 
   tags=$(git_api_request "$repo")
+
   matching_tags=$(echo "$tags" | grep "$base_version")
   if [[ -z "$matching_tags" ]]; then
     printf "[error] no matching tags found for %s\n" "$base_version" >&2
