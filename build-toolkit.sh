@@ -723,15 +723,17 @@ build_and_install() {
       ;;
     cmake|cmake-static)
       build_tool=$(process_args get "-G" "${new_args[@]}")
+      build_tool="${build_tool%\"}"
+      build_tool="${build_tool#\"}"
       cmake_options=$(process_args filter "-G" "${new_args[@]}")
       cmake_options=$(process_args filter "-DBUILD_SHARED_LIBS" "${cmake_options[@]}")
       if [[ -z "$build_tool" ]]; then
-        build_tool="Ninja"
+        build_tool="Unix Makefiles"
       fi
       if $is_static; then
         cmake_options+=("-DBUILD_SHARED_LIBS=OFF")
       fi
-      echo "[info] Running cmake with options: ${cmake_options[*]}" >&2
+      echo "[info] Running cmake with options: ${new_args[*]}" >&2
       run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="\"$build_dir\"" -G "$build_tool" "${cmake_options[@]}"
       ;;
     make)
