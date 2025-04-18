@@ -179,7 +179,7 @@ import() {
         fi
         if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
           echo "[error] Invalid import: $raw_key" >&2
-          echo "        not an accepted source (only \"gitlab.com\" or \"github.com\" allowed)" >&2
+          echo "        not an accepted source (only \"gitlab.com\", \"github.com\" or \"bitbucket.org\" allowed)" >&2
           exit 1
         fi
         prefix=$(find_prefix_tag "$raw_key" "$value")
