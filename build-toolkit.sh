@@ -680,8 +680,14 @@ build_and_install() {
       run "${setup_commands_array[@]}"
   fi
 
+  if [[ $build_type =~ -static$ ]]; then
+    is_static=true
+  else
+    is_static=false
+  fi
+
   if [ -z "$build_dir" ]; then
-    if [[ $build_type =~ -static$ ]]; then
+    if $is_static; then
       build_dir="$DEFAULT_BUILD_FOLDER/$repo_name/build"
     else
       build_dir="/usr"
@@ -689,35 +695,40 @@ build_and_install() {
   fi
 
   case "$build_type" in
-    autogen)
+    autogen|autogen-static)
+      if $is_static; then
+        new_args+=("--enable-static" "--disable-shared" "--enable-pic")
+      fi
       echo "[info] Running autogen.sh for $repo_name with options: ${new_args[*]}" >&2
       run ./autogen.sh --prefix="$build_dir" "${new_args[@]}"
       ;;
-    autogen-static)
-      echo "[info] Running autogen.sh for $repo_name with static build options: ${new_args[*]}" >&2
-      run ./autogen.sh --prefix="$build_dir" --enable-static --disable-shared --enable-pic "${new_args[@]}"
-      ;;
-    configure)
+    configure|configure-static)
+      if $is_static; then
+        new_args+=("--enable-static" "--disable-shared" "--enable-pic")
+      fi
       echo "[info] Running configure for $repo_name with options: ${new_args[*]}" >&2
       configure_autogen
       run ./configure --prefix="$build_dir" "${new_args[@]}"
       ;;
-    configure-static)
-      echo "[info] Running configure for $repo_name with static build options: ${new_args[*]}" >&2
-      configure_autogen
-      run ./configure --prefix="$build_dir" --enable-static --disable-shared --enable-pic "${new_args[@]}"
-      ;;
-    meson)
+    meson|meson-static)
+      if $is_static; then
+        new_args+=("--default-library=static")
+      fi
       echo "[info] Running meson for $repo_name with options: ${new_args[*]}" >&2
-      run python -m mesonbuild.mesonmain setup build --prefix="$build_dir" "${new_args[@]}"
+      run python -m mesonbuild.mesonmain setup build --prefix="$build_dir" --libdir=lib --buildtype=release "${new_args[@]}"
       ;;
-    meson-static)
-      echo "[info] Running meson for $repo_name with static build options: ${new_args[*]}" >&2
-      run python -m mesonbuild.mesonmain setup build --prefix="$build_dir" --libdir=lib --buildtype=release --default-library=static "${new_args[@]}"
-      ;;
-    cmake)
-      echo "[info] Running cmake with options: ${new_args[*]}" >&2
-      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$build_dir" -G Ninja "${new_args[@]}"
+    cmake|cmake-static)
+      build_tool=$(process_args get "-G" "${new_args[@]}")
+      cmake_options=$(process_args filter "-G" "${new_args[@]}")
+      cmake_options=$(process_args filter "-DBUILD_SHARED_LIBS" "${new_args[@]}")
+      if [[ -z "$build_tool" ]]; then
+        build_tool="Ninja"
+      fi
+      if $is_static; then
+        cmake_options+=("-DBUILD_SHARED_LIBS=OFF")
+      fi
+      echo "[info] Running cmake with options: ${cmake_options[*]}" >&2
+      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$build_dir" -G "$build_tool" "${cmake_options[@]}"
       ;;
     make)
       ;;
@@ -728,7 +739,7 @@ build_and_install() {
   esac
 
   if ! $skip_build; then
-    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" ]]; then
+    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
         run make -j"$(cpu_count)" --ignore-errors=2
         run make install
       else
@@ -742,4 +753,39 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
+}
+
+process_args() {
+  local mode="$1"; local arg="$2"; shift 2
+  local -a list=( "$@" ) new_list=()
+  local i=0 n=${#list[@]}
+
+  while (( i < n )); do
+    local v="${list[i]}"
+    if [[ "$v" == "$arg" ]]; then
+      if [[ "$mode" == "get" ]]; then
+        echo "${list[i+1]}"
+        return 0
+      else
+        (( i += 2 ))
+        continue
+      fi
+    elif [[ "$v" == "$arg="* ]]; then
+      if [[ "$mode" == "get" ]]; then
+        echo "${v#*=}"
+        return 0
+      else
+        (( i++ ))
+        continue
+      fi
+    fi
+    new_list+=( "$v" )
+    (( i++ ))
+  done
+
+  if [[ "$mode" == "filter" ]]; then
+    echo "${new_list[@]}"
+  else
+    return 1
+  fi
 }
