@@ -572,6 +572,10 @@ build_and_install() {
     local tag_prefix="LIB_${lib_name}_PREFIX"
     local version_var="LIB_${lib_name}_VERSION"
     repo_url="https://${!git_var}.git"
+    if [[ -z "${!git_var}" ]]; then
+      echo "No dependency found for $1" >&2
+      exit 1
+    fi
     local branch="${!tag_prefix}${!version_var}"
     local build_type=$2
     shift 2
