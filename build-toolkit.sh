@@ -314,6 +314,9 @@ git_api_request() {
 write_cache_prefix() {
   local repo="$1"
   local prefix="$2"
+  if $RUN_NO_CACHE; then
+    return
+  fi
   if [[ -f "$BUILD_KIT_CACHE" ]] && grep -q "^$repo=" "$BUILD_KIT_CACHE"; then
     sed -i "s|^$repo=.*|$repo=$prefix|" "$BUILD_KIT_CACHE"
   else
