@@ -15,10 +15,13 @@ for arg in "$@"; do
   fi
 done
 
-export DEFAULT_BUILD_FOLDER="_build"
+export BUILD_KIT_DIR=".buildkit"
+export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
 export FREEDESKTOP_GIT="https://gitlab.com/freedesktop-sdk/mirrors/freedesktop/"
 export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
 export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
+
+mkdir -p "$BUILD_KIT_DIR"
 
 try_setup_msvc() {
   if (is_windows); then
@@ -236,40 +239,56 @@ update_dependencies() {
 git_api_request() {
   local repo="$1"
   local url_api
+  local page=1
 
   git_loc="${repo/github.com\//}"
   git_loc="${git_loc/gitlab.com\//}"
+  headers=()
 
   if [[ "$repo" =~ ^gitlab.com* ]]; then
-    url_api="https://gitlab.com/api/v4/projects/$(url_encode "$git_loc")/repository/tags"
+    base_url="https://gitlab.com/api/v4/projects/$(url_encode "$git_loc")/repository/tags?per_page=100&page="
   else
-    url_api="https://api.github.com/repos/${repo}/tags?per_page=100"
+    base_url="https://api.github.com/repos/${git_loc}/tags?per_page=100&page="
+    [[ -n "$GITHUB_TOKEN" ]] && headers+=(-H "Authorization: token $GITHUB_TOKEN")
   fi
 
-  response=$(curl -L -s -w "%{http_code}" "$url_api")
-  http_code="${response: -3}"
-  content="${response:0:${#response}-3}"
+  while true; do
+    url_api="${base_url}${page}"
+    response=$(curl "${headers[@]}" -L -s -w "%{http_code}" "$url_api")
+    http_code="${response: -3}"
+    content="${response:0:${#response}-3}"
 
-  if [[ "$http_code" -ge 400 ]]; then
-    return 1
-  fi
+    if [[ "$http_code" -ge 400 ]]; then
+      return 1
+    fi
 
-  curl -s "$url_api" | jq -r '.[].name'
+    echo "$content" | jq -r '.[].name'
+
+    if [[ "$repo" =~ ^gitlab.com* ]]; then
+      next_page=$(echo "$response" | grep -i "X-Next-Page" | awk '{print $2}')
+    else
+      next_page=$(echo "$content" | jq -r 'if length == 100 then 1 else 0 end')
+    fi
+
+    if [[ "$next_page" -eq "0" ]]; then
+      break
+    fi
+    page=$((page + 1))
+  done
 }
 
 find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
 
-  cache_file="prefixes.cache"
-
+  cache_file="$BUILD_KIT_DIR/cache"
   if [[ -f "$cache_file" ]]; then
     local cached_prefix
-    cached_prefix=$(grep "^$repo=" "$cache_file" | cut -d= -f2-)
-    if [[ -n "$cached_prefix" ]]; then
-      echo "$cached_prefix"
-      return 0
-    fi
+     if grep -q "^$repo=" "$cache_file"; then
+       cached_prefix=$(grep "^$repo=" "$cache_file" | cut -d= -f2-)
+       echo "$cached_prefix"
+       return 0
+     fi
   fi
 
   tags=$(git_api_request "$repo")
@@ -613,5 +632,5 @@ build_and_install() {
       eval "cleanup_commands_array=($cleanup_commands)"
       run "${cleanup_commands_array[@]}"
   fi
-  cd ../.. || exit 1
+  cd ../../.. || exit 1
 }

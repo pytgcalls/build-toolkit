@@ -1,4 +1,4 @@
 .idea
 test.sh
-*.cache
+.buildkit
 libraries.properties
