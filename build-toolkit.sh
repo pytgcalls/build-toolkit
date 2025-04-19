@@ -20,8 +20,11 @@ done
 
 export BUILD_KIT_DIR
 BUILD_KIT_DIR="$(pwd)/.buildkit"
-export BUILD_KIT_CACHE="$BUILD_KIT_DIR/cache"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
+export BUILD_KIT_INDEX_CACHE="$BUILD_KIT_DIR/index.cache"
+export BUILD_KIT_LIBS_CACHE="$BUILD_KIT_DIR/libs_locations.cache"
+export BUILD_KIT_LIB_KIND_CACHE="$BUILD_KIT_DIR/libs_kind.cache"
+export BUILD_KIT_LIB_INCLUDES="$BUILD_KIT_DIR/libs_includes.cache"
 export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
 export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
 
@@ -41,23 +44,39 @@ os_lib_format() {
       exit 1
       ;;
   esac
-  if (is_windows); then
+
+  no_windows=false
+  if [[ "$3" == "no_windows" ]] && is_windows; then
+    no_windows=true
+  fi
+
+  if [[ "$2" =~ ^lib ]] && (is_macos || is_linux || no_windows); then
+    lib_name="${2#lib}"
+  else
+    lib_name="$2"
+  fi
+  lib_name="${lib_name%.a}"
+  lib_name="${lib_name%.dylib}"
+  lib_name="${lib_name%.dll}"
+  lib_name="${lib_name%.so}"
+
+  if is_windows && ! $no_windows; then
     if $is_static; then
-      echo "$2.lib"
+      echo "$lib_name.lib"
     else
-      echo "$2.dll"
+      echo "$lib_name.dll"
     fi
-  elif (is_linux); then
+  elif is_linux || $no_windows; then
     if $is_static; then
-      echo "lib$2.a"
+      echo "lib$lib_name.a"
     else
-      echo "lib$2.so"
+      echo "lib$lib_name.so"
     fi
-  elif (is_macos); then
+  elif is_macos; then
     if $is_static; then
-      echo "lib$2.a"
+      echo "lib$lib_name.a"
     else
-      echo "lib$2.dylib"
+      echo "lib$lib_name.dylib"
     fi
   else
     echo "[error] Unknown OS: $(uname -s)" >&2
@@ -305,25 +324,27 @@ git_api_request() {
 }
 
 
-write_cache_prefix() {
-  local repo="$1"
-  local prefix="$2"
+write_cache() {
+  local file_name="$1"
+  local repo="$2"
+  local prefix="$3"
   if $RUN_NO_CACHE; then
     return
   fi
-  if [[ -f "$BUILD_KIT_CACHE" ]] && grep -q "^$repo=" "$BUILD_KIT_CACHE"; then
-    sed -i "s|^$repo=.*|$repo=$prefix|" "$BUILD_KIT_CACHE"
+  if [[ -f "$file_name" ]] && grep -q "^$repo=" "$file_name"; then
+    sed -i "s|^$repo=.*|$repo=$prefix|" "$file_name"
   else
-    echo "$repo=$prefix" >> "$BUILD_KIT_CACHE"
+    echo "$repo=$prefix" >> "$file_name"
   fi
 }
 
-load_cache_prefix() {
-  local repo="$1"
-  if [[ -f "$BUILD_KIT_CACHE" ]] && ! $RUN_NO_CACHE; then
+read_cache() {
+  local file_name="$1"
+  local repo="$2"
+  if [[ -f "$file_name" ]] && ! $RUN_NO_CACHE; then
     local cached_prefix
-     if grep -q "^$repo=" "$BUILD_KIT_CACHE"; then
-       cached_prefix=$(grep "^$repo=" "$BUILD_KIT_CACHE" | cut -d= -f2-)
+     if grep -q "^$repo=" "$file_name"; then
+       cached_prefix=$(grep "^$repo=" "$file_name" | cut -d= -f2-)
        echo "$cached_prefix"
        return 0
      fi
@@ -345,7 +366,7 @@ find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
 
-  prefix=$(load_cache_prefix "$repo")
+  prefix=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
   ret_code=$?
   if [[ $ret_code -eq 0 ]]; then
     echo "$prefix"
@@ -361,7 +382,7 @@ find_prefix_tag() {
     return 1
   fi
 
-  write_cache_prefix "$repo" "$prefix"
+  write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix"
   echo "$prefix"
 }
 
@@ -372,10 +393,10 @@ find_latest_version() {
   local suffix
 
   tags=$(git_api_request "$repo")
-  prefix=$(load_cache_prefix "$repo")
+  prefix=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
   if [[ -z "$prefix" ]]; then
     prefix=$(retrieve_prefix "$tags" "$base_version")
-    write_cache_prefix "$repo" "$prefix"
+    write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix"
   fi
 
   if [[ "$base_version" =~ ^[0-9] ]]; then
@@ -692,6 +713,13 @@ build_and_install() {
     fi
   fi
 
+  if $is_static; then
+    write_cache "$BUILD_KIT_LIB_KIND_CACHE" "${!git_var}" "static"
+  else
+    write_cache "$BUILD_KIT_LIB_KIND_CACHE" "${!git_var}" "dynamic"
+  fi
+  write_cache "$BUILD_KIT_LIBS_CACHE" "${!git_var}" "$build_dir"
+
   executable_command=()
   case "$build_type" in
     autogen|autogen-static)
@@ -752,10 +780,10 @@ build_and_install() {
   if ! $skip_build; then
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
         run make -j"$(cpu_count)" --ignore-errors=2
-        run make install
+        save_headers  run make install
       else
         run python -m ninja -C build
-        run python -m ninja -C build install
+        save_headers run python -m ninja -C build install
       fi
   fi
   if [ -n "$cleanup_commands" ]; then
@@ -764,6 +792,81 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
+}
+
+save_headers() {
+  tmp_before=$(mktemp)
+  tmp_after=$(mktemp)
+  touch "$tmp_before"
+  "$@"
+  touch "$tmp_after"
+  mapfile -t headers < <(find "$build_dir" -type f \( -name "*.h" -o -name "*.hpp" \) -newer "$tmp_before" ! -newer "$tmp_after" | sort -u)
+  rm "$tmp_before" "$tmp_after"
+  write_cache "$BUILD_KIT_LIB_INCLUDES" "${!git_var}" "$(printf "%s;" "${headers[@]}")"
+}
+
+copy_libs() {
+  local lib_name="$1"
+  local dest_dir="$2"
+  shift 2
+  local libs_list=("$@")
+  if [[ ${#libs_list[@]} -eq 0 ]]; then
+    libs_list=(
+      "$lib_name"
+    )
+  fi
+  import_lib_name="${lib_name^^}"
+  import_lib_name="${import_lib_name//-/_}"
+  git_var="LIB_${import_lib_name}_GIT"
+  git_var="${!git_var}"
+  if [[ -z "$git_var" ]]; then
+    echo "[error] No dependency found for $lib_name" >&2
+    exit 1
+  fi
+  base_path=$(read_cache "$BUILD_KIT_LIBS_CACHE" "$git_var")
+  is_static=$(read_cache "$BUILD_KIT_LIB_KIND_CACHE" "$git_var")
+
+  if [[ -z "$base_path" || -z "$is_static" ]]; then
+    echo "[error] No build directory found for $lib_name" >&2
+    echo "        please build the library first" >&2
+    exit 1
+  fi
+
+  local lib_dir="$base_path/lib"
+  local include_dir="$base_path/include"
+  headers=()
+  cached_headers="$(read_cache "$BUILD_KIT_LIB_INCLUDES" "$git_var")"
+
+  if [[ -n "$cached_headers" ]]; then
+    IFS=';' read -r -a headers <<< "$cached_headers"
+  else
+    echo "[error] No headers found for $lib_name" >&2
+    echo "        please build the library first" >&2
+    exit 1
+  fi
+
+  mkdir -p "$dest_dir/lib"
+
+  for header in "${headers[@]}"; do
+    lib_parent="${header//$include_dir\//}"
+    echo "[info] Copying headers from $lib_parent" >&2
+    mkdir -p "$(dirname "$dest_dir/include/$lib_parent")"
+    cp "$include_dir/$lib_parent" "$dest_dir/include/$lib_parent"
+  done
+
+  for lib in "${libs_list[@]}"; do
+    local lib_file
+    lib_file=$(os_lib_format "$is_static" "$lib" "no_windows")
+    found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" -type f)
+    if [[ -n "$found_file" ]]; then
+      lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
+      echo "[info] Copying static library $lib_file_output" >&2
+      cp "$found_file" "$dest_dir/lib/$lib_file_output"
+    else
+      echo "[error] Library $lib_file_output not found in $lib_dir" >&2
+      exit 1
+    fi
+  done
 }
 
 quote_args() {
