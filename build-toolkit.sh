@@ -27,25 +27,6 @@ export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
 
 mkdir -p "$BUILD_KIT_DIR"
 
-try_setup_msvc() {
-  if (is_windows); then
-    VS_EDITION="$(get_vs_edition "$VS_BASE_PATH")"
-    MSVC_VERSION="$(get_msvc_version "$VS_BASE_PATH" "$VS_EDITION")"
-    WINDOWS_KITS_VERSION="$(get_windows_kits_version "$WINDOWS_KITS_BASE_PATH")"
-
-    export PATH="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/bin/Hostx64/x64:$PATH"
-    export LIB="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/lib/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/um/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/ucrt/x64"
-    export INCLUDE="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/include:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/ucrt:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/um:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/shared"
-    echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
-  fi
-}
-
-try_setup_xcode() {
-  if (is_macos); then
-    export MACOSX_DEPLOYMENT_TARGET=12.0
-  fi
-}
-
 os_lib_format() {
   local is_static=false
   case "$1" in
@@ -574,6 +555,23 @@ require() {
       fi
       run source venv/bin/activate
       run python -m pip install meson ninja --root-user-action=ignore
+      ;;
+    xcode)
+      if is_macos; then
+        export MACOSX_DEPLOYMENT_TARGET=12.0
+      fi
+      ;;
+    msvc)
+      if (is_windows); then
+        VS_EDITION="$(get_vs_edition "$VS_BASE_PATH")"
+        MSVC_VERSION="$(get_msvc_version "$VS_BASE_PATH" "$VS_EDITION")"
+        WINDOWS_KITS_VERSION="$(get_windows_kits_version "$WINDOWS_KITS_BASE_PATH")"
+
+        export PATH="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/bin/Hostx64/x64:$PATH"
+        export LIB="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/lib/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/um/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/ucrt/x64"
+        export INCLUDE="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/include:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/ucrt:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/um:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/shared"
+        echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
+      fi
       ;;
     *)
       echo "[error] Unknown requirement: $1" >&2
