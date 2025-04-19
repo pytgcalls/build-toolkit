@@ -618,9 +618,10 @@ build_and_install() {
     local build_type=$3
     shift 3
   else
-    local lib_name="$1"
+    lib_name="${1%%/*}"
     lib_name="${lib_name^^}"
     lib_name="${lib_name//-/_}"
+    [[ "$1" == */* ]] && sub_path="${1#*/}"
     local git_var="LIB_${lib_name}_GIT"
     local tag_prefix="LIB_${lib_name}_PREFIX"
     local version_var="LIB_${lib_name}_VERSION"
@@ -688,6 +689,10 @@ build_and_install() {
   fi
 
   cd "$repo_name" || exit 1
+
+  if [ -n "$sub_path" ]; then
+    cd "$sub_path" || exit 1
+  fi
 
   if [[ "$update_submodules" == "true" ]]; then
     run git submodule update --init --recursive
