@@ -726,6 +726,7 @@ build_and_install() {
   write_cache "$BUILD_KIT_LIBS_CACHE" "${!git_var}" "$build_dir"
 
   executable_command=()
+  dir_after_build=""
   case "$build_type" in
     autogen|autogen-static)
       executable_command=("./autogen.sh")
@@ -751,15 +752,21 @@ build_and_install() {
       new_args+=("--buildtype=release")
       ;;
     cmake|cmake-static)
-      executable_command=(cmake -S . -B build)
+      executable_command=(cmake)
       build_tool=$(process_args get "-G" "${new_args[@]}")
+      dir_after_build=$(process_args get "-B" "${new_args[@]}")
       mapfile -t new_args < <(process_args filter "-G" "${new_args[@]}")
+      mapfile -t new_args < <(process_args filter "-B" "${new_args[@]}")
       mapfile -t new_args < <(process_args filter "-DCMAKE_INSTALL_PREFIX" "${new_args[@]}")
       mapfile -t new_args < <(process_args filter "-DBUILD_SHARED_LIBS" "${new_args[@]}")
       if [[ -z "$build_tool" ]]; then
         build_tool="\"Unix Makefiles\""
       fi
+      if [[ -z "$dir_after_build" ]]; then
+        dir_after_build="build"
+      fi
       new_args+=("-G" "$build_tool")
+      new_args+=("-B" "$dir_after_build")
       if $is_static; then
         new_args+=("-DBUILD_SHARED_LIBS=OFF")
       fi
@@ -783,13 +790,16 @@ build_and_install() {
   run "${merged_commands[@]}"
 
   if ! $skip_build; then
+    if [[ -n "$dir_after_build" ]]; then
+      cd "$dir_after_build" || exit 1
+    fi
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
-        run make -j"$(cpu_count)" --ignore-errors=2
-        save_headers  run make install
-      else
-        run python -m ninja -C build
-        save_headers run python -m ninja -C build install
-      fi
+      run make -j"$(cpu_count)" --ignore-errors=2
+      save_headers run make install
+    else
+      run python -m ninja -C build
+      save_headers run python -m ninja -C build install
+    fi
   fi
   if [ -n "$cleanup_commands" ]; then
       local cleanup_commands_array
