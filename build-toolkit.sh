@@ -791,7 +791,7 @@ build_and_install() {
       new_args+=("--prefix=$build_dir")
       ;;
     meson|meson-static)
-      executable_command=(python -m mesonbuild.mesonmain setup build)
+      executable_command=(python -m mesonbuild.mesonmain setup --reconfigure build)
       if $is_static; then
         new_args+=("--default-library=static")
       fi
@@ -842,11 +842,13 @@ build_and_install() {
       cd "$dir_after_build" || exit 1
     fi
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
+      run make clean
       run make -j"$(cpu_count)" --ignore-errors=2
       save_headers run make install
     else
-      run python -m ninja -C build
-      save_headers run python -m ninja -C build install
+      run python -m ninja -C build -t clean
+      save_headers run python -m ninja -C build -j"$(cpu_count)"
+      run python -m ninja -C build install
     fi
   fi
   if [ -n "$cleanup_commands" ]; then
