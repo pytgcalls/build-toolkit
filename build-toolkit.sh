@@ -21,10 +21,15 @@ done
 export BUILD_KIT_DIR
 BUILD_KIT_DIR="$(pwd)/.buildkit"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
-export BUILD_KIT_INDEX_CACHE="$BUILD_KIT_DIR/prefixes.cache"
-export BUILD_KIT_LIBS_CACHE="$BUILD_KIT_DIR/libs_locations.cache"
-export BUILD_KIT_LIB_KIND_CACHE="$BUILD_KIT_DIR/libs_kind.cache"
-export BUILD_KIT_LIB_INCLUDES="$BUILD_KIT_DIR/libs_includes.cache"
+
+export CACHE_FILE
+if $RUN_NO_CACHE; then
+  CACHE_FILE="$(mktemp)"
+  trap '[[ -f "$CACHE_FILE" ]] && rm -f "$CACHE_FILE"' EXIT
+else
+  CACHE_FILE="$BUILD_KIT_DIR/fox.cache"
+fi
+
 export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
 export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
 
@@ -325,31 +330,33 @@ git_api_request() {
   done
 }
 
+escape_regex() {
+  local str="$1"
+  str="${str//\\/\\\\}"
+  str="${str//\./\\.}"
+  echo "$str"
+}
 
 write_cache() {
-  local file_name="$1"
+  local index_name="$1"
   local repo="$2"
   local value="$3"
-  if $RUN_NO_CACHE; then
-    return
-  fi
-  if [[ -f "$file_name" ]] && grep -q "^$repo=" "$file_name"; then
-    sed -i "s|^$repo=.*|$repo=$value|" "$file_name"
+  if [[ -f "$CACHE_FILE" ]] && grep -q "^$index_name:$repo=" "$CACHE_FILE"; then
+    sed -i "s|^$index_name:$repo=.*|$index_name:$repo=$value|" "$CACHE_FILE"
   else
-    echo "$repo=$value" >> "$file_name"
+    echo "$index_name:$repo=$value" >> "$CACHE_FILE"
   fi
 }
 
 read_cache() {
-  local file_name="$1"
+  local index_name="$1"
   local repo="$2"
-  if [[ -f "$file_name" ]] && ! $RUN_NO_CACHE; then
-    local value
-     if grep -q "^$repo=" "$file_name"; then
-       value=$(grep "^$repo=" "$file_name" | cut -d= -f2-)
-       echo "$value"
-       return 0
-     fi
+  rgx="^$index_name:$repo="
+  if [[ -f "$CACHE_FILE" ]]; then
+    if grep -q "$rgx" "$CACHE_FILE"; then
+      grep "$rgx" "$CACHE_FILE" | cut -d= -f2-
+      return 0
+    fi
   fi
   return 1
 }
@@ -388,7 +395,7 @@ find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
 
-  index_cache=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
+  index_cache=$(read_cache "prefix" "$repo")
   ret_code=$?
   if [[ $ret_code -eq 0 ]]; then
     echo "${index_cache%%;*}"
@@ -405,7 +412,7 @@ find_prefix_tag() {
   fi
   separator=$(identify_separator "$tags" "$base_version")
 
-  write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix;$separator"
+  write_cache "prefix" "$repo" "$prefix;$separator"
   echo "$prefix"
 }
 
@@ -416,11 +423,11 @@ find_latest_version() {
   local suffix
 
   tags=$(git_api_request "$repo")
-  index_cache=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
+  index_cache=$(read_cache "prefix" "$repo")
   if [[ -z "$index_cache" ]]; then
     prefix=$(retrieve_prefix "$tags" "$base_version")
     separator=$(identify_separator "$tags" "$base_version")
-    write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix;$separator"
+    write_cache "prefix" "$repo" "$prefix;$separator"
   fi
   prefix="${index_cache%%;*}"
   separator="${index_cache#*;}"
@@ -584,7 +591,7 @@ run() {
   "${new_args[@]}"
   EXIT_CODE=$?
   if [[ ! ${IGNORE_ERRORS[*]} =~ $EXIT_CODE ]]; then
-      echo "[error] Error while executing $(quote_args "${new_args[@]}") $EXIT_CODE ${IGNORE_ERRORS[*]}" >&2
+      echo "[error] Error while executing $(quote_args "${new_args[@]}")" >&2
       exit $EXIT_CODE
   fi
 }
@@ -654,7 +661,7 @@ build_and_install() {
     local tag_prefix="LIB_${lib_name}_PREFIX"
     local version_var="LIB_${lib_name}_VERSION"
     version_var="${!version_var}"
-    separator=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$git_var")
+    separator=$(read_cache "prefix" "$git_var")
     separator="${separator#*;}"
     version_var=$(apply_separator "$version_var" "$separator")
     ret_code=$?
@@ -756,11 +763,11 @@ build_and_install() {
   fi
 
   if $is_static; then
-    write_cache "$BUILD_KIT_LIB_KIND_CACHE" "${!git_var}" "static"
+    write_cache "lib_kind" "${!git_var}" "static"
   else
-    write_cache "$BUILD_KIT_LIB_KIND_CACHE" "${!git_var}" "dynamic"
+    write_cache "lib_kind" "${!git_var}" "dynamic"
   fi
-  write_cache "$BUILD_KIT_LIBS_CACHE" "${!git_var}" "$build_dir"
+  write_cache "lib" "${!git_var}" "$build_dir"
 
   executable_command=()
   dir_after_build=""
@@ -854,7 +861,7 @@ save_headers() {
   touch "$tmp_after"
   mapfile -t headers < <(find "$build_dir" -type f \( -name "*.h" -o -name "*.hpp" \) -newer "$tmp_before" ! -newer "$tmp_after" | sort -u)
   rm "$tmp_before" "$tmp_after"
-  write_cache "$BUILD_KIT_LIB_INCLUDES" "${!git_var}" "$(printf "%s;" "${headers[@]}")"
+  write_cache "lib_include" "${!git_var}" "$(printf "%s;" "${headers[@]}")"
 }
 
 copy_libs() {
@@ -875,8 +882,8 @@ copy_libs() {
     echo "[error] No dependency found for $lib_name" >&2
     exit 1
   fi
-  base_path=$(read_cache "$BUILD_KIT_LIBS_CACHE" "$git_var")
-  is_static=$(read_cache "$BUILD_KIT_LIB_KIND_CACHE" "$git_var")
+  base_path=$(read_cache "lib" "$git_var")
+  is_static=$(read_cache "lib_kind" "$git_var")
 
   if [[ -z "$base_path" || -z "$is_static" ]]; then
     echo "[error] No build directory found for $lib_name" >&2
@@ -887,7 +894,7 @@ copy_libs() {
   local lib_dir="$base_path/lib"
   local include_dir="$base_path/include"
   headers=()
-  cached_headers="$(read_cache "$BUILD_KIT_LIB_INCLUDES" "$git_var")"
+  cached_headers="$(read_cache "lib_include" "$git_var")"
 
   if [[ -n "$cached_headers" ]]; then
     IFS=';' read -r -a headers <<< "$cached_headers"
