@@ -914,7 +914,7 @@ copy_libs() {
   if [[ -n "${headers[*]}" ]]; then
     for header in "${headers[@]}"; do
       lib_parent="${header//$include_dir\//}"
-      echo "[info] Copying headers from $lib_parent" >&2
+      echo "[info] Copying header $lib_parent" >&2
       mkdir -p "$(dirname "$dest_dir/include/$lib_parent")"
       cp "$include_dir/$lib_parent" "$dest_dir/include/$lib_parent"
     done
