@@ -862,12 +862,14 @@ copy_libs() {
 
   mkdir -p "$dest_dir/lib"
 
-  for header in "${headers[@]}"; do
-    lib_parent="${header//$include_dir\//}"
-    echo "[info] Copying headers from $lib_parent" >&2
-    mkdir -p "$(dirname "$dest_dir/include/$lib_parent")"
-    cp "$include_dir/$lib_parent" "$dest_dir/include/$lib_parent"
-  done
+  if [[ -n "${headers[*]}" ]]; then
+    for header in "${headers[@]}"; do
+      lib_parent="${header//$include_dir\//}"
+      echo "[info] Copying headers from $lib_parent" >&2
+      mkdir -p "$(dirname "$dest_dir/include/$lib_parent")"
+      cp "$include_dir/$lib_parent" "$dest_dir/include/$lib_parent"
+    done
+  fi
 
   for lib in "${libs_list[@]}"; do
     local lib_file
@@ -875,10 +877,10 @@ copy_libs() {
     found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" -type f)
     if [[ -n "$found_file" ]]; then
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
-      echo "[info] Copying static library $lib_file_output" >&2
+      echo "[info] Copying $is_static library $lib_file_output" >&2
       cp "$found_file" "$dest_dir/lib/$lib_file_output"
     else
-      echo "[error] Library $lib_file_output not found in $lib_dir" >&2
+      echo "[error] Library $lib_file not found in $lib_dir" >&2
       exit 1
     fi
   done
