@@ -551,11 +551,11 @@ run() {
       new_args+=("$arg")
     fi
   done
-  echo ">>> ${new_args[*]}" >&2
+  echo ">>> $(quote_args "${new_args[@]}")" >&2
   "${new_args[@]}"
   EXIT_CODE=$?
   if [[ ! ${IGNORE_ERRORS[*]} =~ $EXIT_CODE ]]; then
-      echo "[error] Error while executing ${new_args[*]} $EXIT_CODE ${IGNORE_ERRORS[*]}" >&2
+      echo "[error] Error while executing $(quote_args "${new_args[@]}") $EXIT_CODE ${IGNORE_ERRORS[*]}" >&2
       exit $EXIT_CODE
   fi
 }
@@ -655,11 +655,7 @@ build_and_install() {
         new_args+=("${tmp[@]}")
       fi
     else
-      if needs_quotes "$arg"; then
-        new_args+=("\"$arg\"")
-      else
-        new_args+=("$arg")
-      fi
+      new_args+=("$arg")
     fi
   done
 
@@ -698,43 +694,45 @@ build_and_install() {
     fi
   fi
 
+  executable_command=()
   case "$build_type" in
     autogen|autogen-static)
+      executable_command=("./autogen.sh")
       if $is_static; then
         new_args+=("--enable-static" "--disable-shared" "--enable-pic")
       fi
-      echo "[info] Running autogen.sh for $repo_name with options: ${new_args[*]}" >&2
-      run ./autogen.sh --prefix="\"$build_dir\"" "${new_args[@]}"
+      new_args+=("--prefix=$build_dir")
       ;;
     configure|configure-static)
+      executable_command=("./configure")
       if $is_static; then
         new_args+=("--enable-static" "--disable-shared" "--enable-pic")
       fi
-      echo "[info] Running configure for $repo_name with options: ${new_args[*]}" >&2
-      configure_autogen
-      run ./configure --prefix="\"$build_dir\"" "${new_args[@]}"
+      new_args+=("--prefix=$build_dir")
       ;;
     meson|meson-static)
+      executable_command=(python -m mesonbuild.mesonmain setup build)
       if $is_static; then
         new_args+=("--default-library=static")
       fi
-      echo "[info] Running meson for $repo_name with options: ${new_args[*]}" >&2
-      run python -m mesonbuild.mesonmain setup build --prefix="\"$build_dir\"" --libdir=lib --buildtype=release "${new_args[@]}"
+      new_args+=("--prefix=$build_dir")
+      new_args+=("--libdir=lib")
+      new_args+=("--buildtype=release")
       ;;
     cmake|cmake-static)
+      executable_command=(cmake -S . -B build)
       build_tool=$(process_args get "-G" "${new_args[@]}")
-      build_tool="${build_tool%\"}"
-      build_tool="${build_tool#\"}"
-      cmake_options=$(process_args filter "-G" "${new_args[@]}")
-      cmake_options=$(process_args filter "-DBUILD_SHARED_LIBS" "${cmake_options[@]}")
+      mapfile -t new_args < <(process_args filter "-G" "${new_args[@]}")
+      mapfile -t new_args < <(process_args filter "-DCMAKE_INSTALL_PREFIX" "${new_args[@]}")
+      mapfile -t new_args < <(process_args filter "-DBUILD_SHARED_LIBS" "${new_args[@]}")
       if [[ -z "$build_tool" ]]; then
-        build_tool="Unix Makefiles"
+        build_tool="\"Unix Makefiles\""
       fi
+      new_args+=("-G" "$build_tool")
       if $is_static; then
-        cmake_options+=("-DBUILD_SHARED_LIBS=OFF")
+        new_args+=("-DBUILD_SHARED_LIBS=OFF")
       fi
-      echo "[info] Running cmake with options: ${new_args[*]}" >&2
-      run cmake -S . -B build -DCMAKE_INSTALL_PREFIX="\"$build_dir\"" -G "$build_tool" "${cmake_options[@]}"
+      new_args+=("-DCMAKE_INSTALL_PREFIX=$build_dir")
       ;;
     make)
       ;;
@@ -743,6 +741,15 @@ build_and_install() {
       exit 1
       ;;
   esac
+  merged_commands=("${executable_command[@]}" "${new_args[@]}")
+
+  echo "[info] Running $build_type with options: $(quote_args "${new_args[@]}")" >&2
+  case "$build_type" in
+    configure|configure-static)
+      configure_autogen
+      ;;
+  esac
+  run "${merged_commands[@]}"
 
   if ! $skip_build; then
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
@@ -761,21 +768,36 @@ build_and_install() {
   cd "$current_dir" || exit 1
 }
 
-needs_quotes() {
-  local val="$1"
-  [[ "$val" =~ [[:space:]\$\&\|\>\<\;\(\)\*\'\"] ]]
+quote_args() {
+  local first=true
+  for arg in "$@"; do
+    if ! $first; then
+      printf " "
+    else
+      first=false
+    fi
+    if [[ "$arg" =~ [[:space:]\$\&\|\>\<\;\(\)\*\'\"] ]]; then
+      printf "\"%s\"" "${arg//\"/\\\"}"
+    else
+      printf "%s" "$arg"
+    fi
+  done
 }
 
 process_args() {
-  local mode="$1"; local arg="$2"; shift 2
-  local -a list=( "$@" ) new_list=()
-  local i=0 n=${#list[@]}
-
+  local mode="$1";
+  local arg="$2";
+  shift 2
+  local args=("$@")
+  local new_args=()
+  local i=0
+  local n=${#args[@]}
+  local v
   while (( i < n )); do
-    local v="${list[i]}"
+    v="${args[i]}"
     if [[ "$v" == "$arg" ]]; then
       if [[ "$mode" == "get" ]]; then
-        echo "${list[i+1]}"
+        echo "${args[i+1]}"
         return 0
       else
         (( i += 2 ))
@@ -790,12 +812,11 @@ process_args() {
         continue
       fi
     fi
-    new_list+=( "$v" )
+    new_args+=( "$v" )
     (( i++ ))
   done
-
   if [[ "$mode" == "filter" ]]; then
-    echo "${new_list[@]}"
+    printf '%s\n' "${new_args[@]}"
   else
     return 1
   fi
