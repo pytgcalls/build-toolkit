@@ -808,7 +808,7 @@ build_and_install() {
       mapfile -t new_args < <(process_args filter "-DCMAKE_INSTALL_PREFIX" "${new_args[@]}")
       mapfile -t new_args < <(process_args filter "-DBUILD_SHARED_LIBS" "${new_args[@]}")
       if [[ -z "$build_tool" ]]; then
-        build_tool="\"Unix Makefiles\""
+        build_tool="Unix Makefiles"
       fi
       if [[ -z "$dir_after_build" ]]; then
         dir_after_build="build"
