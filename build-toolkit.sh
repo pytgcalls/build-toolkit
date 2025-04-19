@@ -211,6 +211,10 @@ import() {
         if [[ $ret_code -ne 0 ]]; then
           exit 1
         fi
+        pkg_config_path="$(read_cache "lib" "$raw_key")"
+        if [[ -n "$pkg_config_path" ]]; then
+          export PKG_CONFIG_PATH="$pkg_config_path/lib/pkgconfig:$PKG_CONFIG_PATH"
+        fi
         export "$version_var=$value"
         export "$source_var=$remote_source/$file_name"
         export "LIB_${key}_GIT=$raw_key"
@@ -851,6 +855,7 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
+  export PKG_CONFIG_PATH="$build_dir/lib/pkgconfig:$PKG_CONFIG_PATH"
 }
 
 save_headers() {
