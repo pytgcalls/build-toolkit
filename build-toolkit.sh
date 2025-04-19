@@ -21,7 +21,7 @@ done
 export BUILD_KIT_DIR
 BUILD_KIT_DIR="$(pwd)/.buildkit"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
-export BUILD_KIT_INDEX_CACHE="$BUILD_KIT_DIR/index.cache"
+export BUILD_KIT_INDEX_CACHE="$BUILD_KIT_DIR/prefixes.cache"
 export BUILD_KIT_LIBS_CACHE="$BUILD_KIT_DIR/libs_locations.cache"
 export BUILD_KIT_LIB_KIND_CACHE="$BUILD_KIT_DIR/libs_kind.cache"
 export BUILD_KIT_LIB_INCLUDES="$BUILD_KIT_DIR/libs_includes.cache"
@@ -241,31 +241,33 @@ update_dependencies() {
   for var in $(compgen -v | grep 'LIB_.*_SOURCE$'); do
     local source_var="$var"
     local version_var="${var/_SOURCE/_VERSION}"
+    version_var="${!version_var}"
     local git_var="${var/_SOURCE/_GIT}"
+    git_var="${!git_var}"
 
     if [[ -z "${!source_var}" ]] || [[ ! "${!source_var}" =~ ^/ ]]; then
       continue
     fi
 
-    echo "[info] Checking for updates in ${!git_var}" >&2
-    latest_version="$(find_latest_version "${!git_var}" "${!version_var}")"
+    echo "[info] Checking for updates in $git_var" >&2
+    latest_version="$(find_latest_version "$git_var" "$version_var")"
 
     if [[ -z "$latest_version" ]]; then
-      echo "[error] Failed to find latest version for ${!git_var}" >&2
+      echo "[error] Failed to find latest version for $git_var" >&2
       exit 1
     fi
 
-    if [[ "$latest_version" == "${!version_var}" ]]; then
-      echo "[info] ${!git_var} is up to date" >&2
+    if [[ "$latest_version" == "$version_var" ]]; then
+      echo "[info] $git_var is up to date" >&2
       continue
     fi
 
-    echo "[info] ${!git_var} is outdated" >&2
-    echo "       Current version: ${!version_var}" >&2
+    echo "[info] $git_var is outdated" >&2
+    echo "       Current version: $version_var" >&2
     echo "       Updating to $latest_version" >&2
 
-    sed -i "s|^${!git_var}=.*|${!git_var}=$latest_version|" "${!source_var/\//}"
-    echo "[info] Updated ${!git_var} to $latest_version" >&2
+    sed -i "s|^$git_var=.*|$git_var=$latest_version|" "${!source_var/\//}"
+    echo "[info] Updated $git_var to $latest_version" >&2
   done
 }
 
@@ -327,14 +329,14 @@ git_api_request() {
 write_cache() {
   local file_name="$1"
   local repo="$2"
-  local prefix="$3"
+  local value="$3"
   if $RUN_NO_CACHE; then
     return
   fi
   if [[ -f "$file_name" ]] && grep -q "^$repo=" "$file_name"; then
-    sed -i "s|^$repo=.*|$repo=$prefix|" "$file_name"
+    sed -i "s|^$repo=.*|$repo=$value|" "$file_name"
   else
-    echo "$repo=$prefix" >> "$file_name"
+    echo "$repo=$value" >> "$file_name"
   fi
 }
 
@@ -342,10 +344,10 @@ read_cache() {
   local file_name="$1"
   local repo="$2"
   if [[ -f "$file_name" ]] && ! $RUN_NO_CACHE; then
-    local cached_prefix
+    local value
      if grep -q "^$repo=" "$file_name"; then
-       cached_prefix=$(grep "^$repo=" "$file_name" | cut -d= -f2-)
-       echo "$cached_prefix"
+       value=$(grep "^$repo=" "$file_name" | cut -d= -f2-)
+       echo "$value"
        return 0
      fi
   fi
@@ -359,17 +361,37 @@ retrieve_prefix() {
   if [[ -z "$matching_tags" ]]; then
     return 1
   fi
-  echo "$matching_tags" | sed -E 's/[0-9]+\.[0-9]+.*//'
+  echo "$matching_tags" | sed -E 's/[0-9]+(\.|_)[0-9]+.*//'
+}
+
+identify_separator() {
+  local tags="$1"
+  local base_version="$2"
+  matching_tags=$(echo "$tags" | grep "$base_version" | head -n 1)
+  if [[ -z "$matching_tags" ]]; then
+    return 1
+  fi
+  if [[ "$matching_tags" =~ [0-9]+(\.|_)[0-9]+ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
+}
+
+apply_separator() {
+  local version="$1"
+  local separator="$2"
+  echo "$version" | sed -E "s/([0-9]+)(\.|_)/\1$separator/g"
 }
 
 find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
 
-  prefix=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
+  index_cache=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
   ret_code=$?
   if [[ $ret_code -eq 0 ]]; then
-    echo "$prefix"
+    echo "${index_cache%%;*}"
     return 0
   fi
   echo "[info] Importing $repo" >&2
@@ -381,8 +403,9 @@ find_prefix_tag() {
     echo "[error] Failed to find prefix for $repo" >&2
     return 1
   fi
+  separator=$(identify_separator "$tags" "$base_version")
 
-  write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix"
+  write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix;$separator"
   echo "$prefix"
 }
 
@@ -393,11 +416,14 @@ find_latest_version() {
   local suffix
 
   tags=$(git_api_request "$repo")
-  prefix=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
-  if [[ -z "$prefix" ]]; then
+  index_cache=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$repo")
+  if [[ -z "$index_cache" ]]; then
     prefix=$(retrieve_prefix "$tags" "$base_version")
-    write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix"
+    separator=$(identify_separator "$tags" "$base_version")
+    write_cache "$BUILD_KIT_INDEX_CACHE" "$repo" "$prefix;$separator"
   fi
+  prefix="${index_cache%%;*}"
+  separator="${index_cache#*;}"
 
   if [[ "$base_version" =~ ^[0-9] ]]; then
     void_prefix="[0-9]"
@@ -408,8 +434,9 @@ find_latest_version() {
   else
     suffix=".*-$(echo "$base_version" | sed -E 's/.*[0-9]+-//')$"
   fi
+  base_version="$(apply_separator "$base_version" "$separator")"
 
-  echo "$tags" \
+  apply_separator "$(echo "$tags" \
     | grep "^$prefix$void_prefix$suffix" \
     | while read -r tag; do
         ver="${tag/$prefix/}"
@@ -418,7 +445,7 @@ find_latest_version() {
         fi
       done \
     | sort -V \
-    | awk 'END { print $1 }'
+    | awk 'END { print $1 }')" "."
 }
 
 url_encode() {
@@ -623,14 +650,24 @@ build_and_install() {
     lib_name="${lib_name//-/_}"
     [[ "$1" == */* ]] && sub_path="${1#*/}"
     local git_var="LIB_${lib_name}_GIT"
+    git_var="${!git_var}"
     local tag_prefix="LIB_${lib_name}_PREFIX"
     local version_var="LIB_${lib_name}_VERSION"
-    repo_url="https://${!git_var}.git"
-    if [[ -z "${!git_var}" ]]; then
-      echo "[error] No dependency found for $1" >&2
+    version_var="${!version_var}"
+    separator=$(read_cache "$BUILD_KIT_INDEX_CACHE" "$git_var")
+    separator="${separator#*;}"
+    version_var=$(apply_separator "$version_var" "$separator")
+    ret_code=$?
+    if [[ $ret_code -eq 1 ]]; then
+      echo "[error] Failed to find prefix for $git_var" >&2
       exit 1
     fi
-    local branch="${!tag_prefix}${!version_var}"
+    repo_url="https://$git_var.git"
+    if [[ -z "$git_var" ]]; then
+      echo "[error] No dependency found for ${1%%/*}" >&2
+      exit 1
+    fi
+    local branch="${!tag_prefix}$version_var"
     local build_type=$2
     shift 2
   fi
