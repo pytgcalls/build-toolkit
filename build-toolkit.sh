@@ -127,35 +127,51 @@ import() {
   fi
 
   if $found_from; then
-    internal_source="$remote_source"
-    internal_source="${internal_source%/}"
-    internal_source="$internal_source/$file_name"
-    normalized_source="${remote_source#http://}"
+    case "$remote_source" in
+    python*)
+      if ! "$remote_source" -m pip show "$file_name" &>/dev/null; then
+        "$remote_source" -m pip install "$file_name" -U
+      fi
+      return 0
+      ;;
+    rust)
+      if ! cargo install --list | grep -q "^$file_name v"; then
+        cargo install "$file_name"
+      fi
+      return 0
+      ;;
+    *)
+      internal_source="$remote_source"
+      internal_source="${internal_source%/}"
+      internal_source="$internal_source/$file_name"
+      normalized_source="${remote_source#http://}"
 
-    normalized_source="${normalized_source#https://}"
-    if [[ "$normalized_source" == github.com/* ]]; then
-      temp_remote="${normalized_source/github.com\//}"
-      temp_remote="${temp_remote%.git}"
-      repo_owner="${temp_remote%%/*}"
-      rest="${temp_remote#*/}"
-      repo_name="${rest%%/*}"
-      remote_source="github.com/$repo_owner/$repo_name"
-      internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master/$file_name"
-    fi
+      normalized_source="${normalized_source#https://}"
+      if [[ "$normalized_source" == github.com/* ]]; then
+        temp_remote="${normalized_source/github.com\//}"
+        temp_remote="${temp_remote%.git}"
+        repo_owner="${temp_remote%%/*}"
+        rest="${temp_remote#*/}"
+        repo_name="${rest%%/*}"
+        remote_source="github.com/$repo_owner/$repo_name"
+        internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master/$file_name"
+      fi
 
-    response=$(curl -L -s -w "%{http_code}" "$internal_source")
-    http_code="${response: -3}"
-    content="${response:0:${#response}-3}"
+      response=$(curl -L -s -w "%{http_code}" "$internal_source")
+      http_code="${response: -3}"
+      content="${response:0:${#response}-3}"
 
-    if [[ "$http_code" -ge 400 ]]; then
-      echo "[error] Failed to import: $file_name" >&2
-      echo "        source returned HTTP $http_code ($remote_source)" >&2
-      exit 1
-    elif [[ -z "$content" ]]; then
-      echo "[error] Failed to import: $file_name" >&2
-      echo "        empty content received from $remote_source" >&2
-      exit 1
-    fi
+      if [[ "$http_code" -ge 400 ]]; then
+        echo "[error] Failed to import: $file_name" >&2
+        echo "        source returned HTTP $http_code ($remote_source)" >&2
+        exit 1
+      elif [[ -z "$content" ]]; then
+        echo "[error] Failed to import: $file_name" >&2
+        echo "        empty content received from $remote_source" >&2
+        exit 1
+      fi
+      ;;
+    esac
   else
     content=$(<"$file_name")
   fi
@@ -606,14 +622,13 @@ require() {
       if [ ! -d "$HOME/.cargo" ]; then
         run curl https://sh.rustup.rs -sSf | sh -s -- -y
       fi
-      run source "$HOME"/.cargo/env
+      source "$HOME"/.cargo/env
       ;;
     venv)
       if [ ! -d "venv" ]; then
         run python3 -m venv venv
       fi
-      run source venv/bin/activate
-      run python -m pip install meson ninja --root-user-action=ignore
+      source venv/bin/activate
       ;;
     xcode)
       if is_macos; then
