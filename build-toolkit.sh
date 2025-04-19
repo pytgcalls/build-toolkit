@@ -763,11 +763,11 @@ build_and_install() {
   fi
 
   if $is_static; then
-    write_cache "lib_kind" "${!git_var}" "static"
+    write_cache "lib_kind" "$git_var" "static"
   else
-    write_cache "lib_kind" "${!git_var}" "dynamic"
+    write_cache "lib_kind" "$git_var" "dynamic"
   fi
-  write_cache "lib" "${!git_var}" "$build_dir"
+  write_cache "lib" "$git_var" "$build_dir"
 
   executable_command=()
   dir_after_build=""
@@ -861,7 +861,7 @@ save_headers() {
   touch "$tmp_after"
   mapfile -t headers < <(find "$build_dir" -type f \( -name "*.h" -o -name "*.hpp" \) -newer "$tmp_before" ! -newer "$tmp_after" | sort -u)
   rm "$tmp_before" "$tmp_after"
-  write_cache "lib_include" "${!git_var}" "$(printf "%s;" "${headers[@]}")"
+  write_cache "lib_include" "$git_var" "$(printf "%s;" "${headers[@]}")"
 }
 
 copy_libs() {
