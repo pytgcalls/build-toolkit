@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 
-export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/pkgconfig:$PKG_CONFIG_PATH
+append_pkg_config_path() {
+  local new_path="$1"
+  if [[ ":$PKG_CONFIG_PATH:" != *":$new_path:"* ]]; then
+    export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$new_path"
+  fi
+}
+
+export PKG_CONFIG_PATH
+append_pkg_config_path /usr/local/lib/pkgconfig
+append_pkg_config_path /usr/local/share/pkgconfig
+append_pkg_config_path /usr/lib/pkgconfig
 export ACLOCAL_PATH=/usr/share/aclocal
 
 export OS_ARCH=""
@@ -229,7 +239,7 @@ import() {
         fi
         pkg_config_path="$(read_cache "lib" "$raw_key")"
         if [[ -n "$pkg_config_path" ]]; then
-          export PKG_CONFIG_PATH="$pkg_config_path/lib/pkgconfig:$PKG_CONFIG_PATH"
+          append_pkg_config_path "$pkg_config_path/lib/pkgconfig"
         fi
         export "$version_var=$value"
         export "$source_var=$remote_source/$file_name"
@@ -873,7 +883,7 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
-  export PKG_CONFIG_PATH="$build_dir/lib/pkgconfig:$PKG_CONFIG_PATH"
+  append_pkg_config_path "$build_dir/lib/pkgconfig"
 }
 
 save_headers() {
