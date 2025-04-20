@@ -870,14 +870,16 @@ build_and_install() {
       ;;
   esac
   write_cache "lib_include" "$git_var" ";"
-  save_headers run "${merged_commands[@]}"
+  if [[ -n "${merged_commands[*]}" ]]; then
+    save_headers run "${merged_commands[@]}"
+  fi
 
   if ! $skip_build; then
     if [[ -n "$dir_after_build" ]]; then
       cd "$dir_after_build" || exit 1
     fi
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
-      run make clean
+      run make clean --ignore-errors=2
       save_headers run make -j"$(cpu_count)" --ignore-errors=2
       save_headers run make install
     else
