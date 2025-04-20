@@ -136,19 +136,20 @@ import() {
     return 1
   fi
 
+  local allow_file_detection=true
   if $found_from; then
     case "$remote_source" in
     python*)
       if ! "$remote_source" -m pip show "$file_name" &>/dev/null; then
         "$remote_source" -m pip install "$file_name" -U
       fi
-      return 0
+      allow_file_detection=false
       ;;
     rust)
       if ! cargo install --list | grep -q "^$file_name v"; then
         cargo install "$file_name"
       fi
-      return 0
+      allow_file_detection=false
       ;;
     *)
       internal_source="$remote_source"
@@ -186,72 +187,79 @@ import() {
     content=$(<"$file_name")
   fi
 
-  if [[ "$file_name" == *.properties ]]; then
-    while IFS= read -r line; do
-      if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-        raw_key="${BASH_REMATCH[1]}"
-        value="${BASH_REMATCH[2]}"
-        value="${value//$'\r'/}"
-         if [[ "$raw_key" =~ \.git$ ]]; then
-           raw_key="${raw_key%.git}"
-           echo "[warn] Trailing '.git' suffix detected in $raw_key" >&2
-           echo "       This suffix is not required for the import" >&2
-         fi
-        if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
-          echo "[error] Invalid import: $raw_key" >&2
-          echo "        invalid characters in import declaration" >&2
-          exit 1
-        fi
-        if [[ "$value" =~ ^\$ ]]; then
-          var_ref="${value^^}"
-          var_ref="${var_ref//-/_}"
-          var_ref="LIB_${var_ref#\$}_VERSION"
-          var_ref="${!var_ref}"
-          if [[ -n "$var_ref" ]]; then
-            value="$var_ref"
-          else
+  if $allow_file_detection; then
+    if [[ "$file_name" == *.properties ]]; then
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+          raw_key="${BASH_REMATCH[1]}"
+          value="${BASH_REMATCH[2]}"
+          value="${value//$'\r'/}"
+           if [[ "$raw_key" =~ \.git$ ]]; then
+             raw_key="${raw_key%.git}"
+             echo "[warn] Trailing '.git' suffix detected in $raw_key" >&2
+             echo "       This suffix is not required for the import" >&2
+           fi
+          if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
             echo "[error] Invalid import: $raw_key" >&2
-            echo "        invalid import reference in import declaration" >&2
+            echo "        invalid characters in import declaration" >&2
             exit 1
           fi
+          local is_updatable=true
+          if [[ "$value" =~ ^\$ ]]; then
+            var_ref="${value^^}"
+            var_ref="${var_ref//-/_}"
+            var_ref="LIB_${var_ref#\$}_VERSION"
+            var_ref="${!var_ref}"
+            if [[ -n "$var_ref" ]]; then
+              value="$var_ref"
+              is_updatable=false
+            else
+              echo "[error] Invalid import: $raw_key" >&2
+              echo "        invalid import reference in import declaration" >&2
+              exit 1
+            fi
+          fi
+          key=$(basename "$raw_key")
+          key="${key^^}"
+          key="${key//-/_}"
+          version_var="LIB_${key}_VERSION"
+          source_var="LIB_${key}_SOURCE"
+          if [[ -n "${!version_var}" ]]; then
+            echo "[warn] version for $raw_key already set" >&2
+            echo "       previous value  : ${!version_var}" >&2
+            echo "       declared at     : ${!source_var}" >&2
+            echo "       overriding with : $value" >&2
+            echo "       imported from   : $remote_source/$file_name" >&2
+          fi
+          if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
+            echo "[error] Invalid import: $raw_key" >&2
+            echo "        not an accepted source (only \"gitlab.com\", \"github.com\" or \"bitbucket.org\" allowed)" >&2
+            exit 1
+          fi
+          prefix=$(find_prefix_tag "$raw_key" "$value")
+          ret_code=$?
+          if [[ $ret_code -ne 0 ]]; then
+            exit 1
+          fi
+          pkg_config_path="$(read_cache "lib" "$raw_key")"
+          if [[ -n "$pkg_config_path" ]]; then
+            append_pkg_config_path "$pkg_config_path/lib/pkgconfig"
+          fi
+          export "$version_var=$value"
+          export "$source_var=$remote_source/$file_name"
+          export "LIB_${key}_GIT=$raw_key"
+          export "LIB_${key}_PREFIX=$prefix"
+          if $is_updatable; then
+            export "LIB_${key}_UPDATABLE=true"
+          fi
         fi
-        key=$(basename "$raw_key")
-        key="${key^^}"
-        key="${key//-/_}"
-        version_var="LIB_${key}_VERSION"
-        source_var="LIB_${key}_SOURCE"
-        if [[ -n "${!version_var}" ]]; then
-          echo "[warn] version for $raw_key already set" >&2
-          echo "       previous value  : ${!version_var}" >&2
-          echo "       declared at     : ${!source_var}" >&2
-          echo "       overriding with : $value" >&2
-          echo "       imported from   : $remote_source/$file_name" >&2
-        fi
-        if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
-          echo "[error] Invalid import: $raw_key" >&2
-          echo "        not an accepted source (only \"gitlab.com\", \"github.com\" or \"bitbucket.org\" allowed)" >&2
-          exit 1
-        fi
-        prefix=$(find_prefix_tag "$raw_key" "$value")
-        ret_code=$?
-        if [[ $ret_code -ne 0 ]]; then
-          exit 1
-        fi
-        pkg_config_path="$(read_cache "lib" "$raw_key")"
-        if [[ -n "$pkg_config_path" ]]; then
-          append_pkg_config_path "$pkg_config_path/lib/pkgconfig"
-        fi
-        export "$version_var=$value"
-        export "$source_var=$remote_source/$file_name"
-        export "LIB_${key}_GIT=$raw_key"
-        export "LIB_${key}_PREFIX=$prefix"
-      fi
-    done <<< "$content"
-  elif [[ "$file_name" == *.sh || "$file_name" == *.env ]]; then
-    source /dev/stdin <<< "$content"
-  else
-    echo "[error] Unknown import file type: $file_name" >&2
-    exit 1
+      done <<< "$content"
+    elif [[ "$file_name" == *.sh || "$file_name" == *.env ]]; then
+      source /dev/stdin <<< "$content"
+    else
+      echo "[error] Unknown import file type: $file_name" >&2
+      exit 1
+    fi
   fi
 
   local caller_file="${BASH_SOURCE[1]}"
@@ -273,11 +281,11 @@ import() {
 }
 
 update_dependencies() {
-  for var in $(compgen -v | grep 'LIB_.*_SOURCE$'); do
-    local source_var="$var"
-    local version_var="${var/_SOURCE/_VERSION}"
+  for var in $(compgen -v | grep 'LIB_.*_UPDATABLE$'); do
+    local source_var="${var/_UPDATABLE/_SOURCE}"
+    local version_var="${var/_UPDATABLE/_VERSION}"
     version_var="${!version_var}"
-    local git_var="${var/_SOURCE/_GIT}"
+    local git_var="${var/_UPDATABLE/_GIT}"
     git_var="${!git_var}"
 
     if [[ -z "${!source_var}" ]] || [[ ! "${!source_var}" =~ ^/ ]]; then
