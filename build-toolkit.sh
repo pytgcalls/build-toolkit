@@ -729,6 +729,7 @@ build_and_install() {
   local dir_after_build=""
   local new_args=()
   local executable_command=()
+  local last_branch=""
   current_dir="$(pwd)"
 
   for arg in "$@"; do
@@ -767,13 +768,21 @@ build_and_install() {
   mkdir -p "$DEFAULT_BUILD_FOLDER"
   cd "$DEFAULT_BUILD_FOLDER" || exit 1
 
-  if [ -n "$repo_url" ] && [ -n "$branch" ]; then
-    if [ ! -d "$repo_name" ]; then
-      run git clone "$repo_url" --branch "$branch" --depth 1
-    fi
+  if [[ ! -d "$repo_name" ]]; then
+    run git clone "$repo_url" --branch "$branch" --depth 1
+    write_cache "last_branch" "$git_var" "$branch"
   fi
 
   cd "$repo_name" || exit 1
+
+  last_branch="$(read_cache "last_branch" "$git_var")"
+  if [[ "$branch" != "$last_branch" ]]; then
+    run git fetch origin tag "$branch" --depth=1
+    run git checkout "$branch"
+    run git reset --hard
+    run git clean -fdx
+    write_cache "last_branch" "$git_var" "$branch"
+  fi
 
   if [ -n "$sub_path" ]; then
     cd "$sub_path" || exit 1
