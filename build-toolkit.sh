@@ -968,11 +968,12 @@ copy_libs() {
   for lib in "${libs_list[@]}"; do
     local lib_file
     lib_file=$(os_lib_format "$is_static" "$lib" "no_windows")
-    found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" -type f)
+    found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
     if [[ -n "$found_file" ]]; then
+      real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
       echo "[info] Copying $is_static library $lib_file_output" >&2
-      cp "$found_file" "$dest_dir/lib/$lib_file_output"
+      cp "$real_file" "$dest_dir/lib/$lib_file_output"
     else
       echo "[error] Library $lib_file not found in $lib_dir" >&2
       exit 1
@@ -1032,4 +1033,26 @@ process_args() {
   else
     return 1
   fi
+}
+
+resolve_realpath() {
+  local path="$1"
+
+  if [ ! -L "$path" ]; then
+    echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+    return
+  fi
+
+  while [ -L "$path" ]; do
+    if [[ "$path" != /* ]]; then
+      path="$(dirname "$1")/$path"
+    fi
+    path_target=$(find "$(dirname "$path")" -maxdepth 1 -name "$(basename "$path")" -exec readlink -f {} \;)
+    if [[ "$path_target" != /* ]]; then
+      path="$(dirname "$path")/$path_target"
+    else
+      path="$path_target"
+    fi
+  done
+  echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
 }
