@@ -12,15 +12,12 @@ append_pkg_config_path /usr/local/share/pkgconfig
 append_pkg_config_path /usr/lib/pkgconfig
 export ACLOCAL_PATH=/usr/share/aclocal
 
-export OS_ARCH=""
 RUN_UPDATES=false
 RUN_NO_CACHE=false
 : "${MAIN_SCRIPT:="$0"}"
 
 for arg in "$@"; do
-  if [[ $arg == --arch=* ]]; then
-    export OS_ARCH="${arg#--arch=}"
-  elif [[ $arg == --update ]]; then
+  if [[ $arg == --update ]]; then
     RUN_UPDATES=true
   elif [[ $arg == --no-cache ]]; then
     RUN_NO_CACHE=true
