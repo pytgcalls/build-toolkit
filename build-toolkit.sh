@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 
+if [[ -z "$BASH_VERSION" ]]; then
+  echo "[error] This script must be run with Bash (BASH_VERSION is not set)" >&2
+  exit 1
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  if (( BASH_VERSINFO[0] < 3 && BASH_VERSINFO[1] < 2 )); then
+    echo "[error] Bash 3.2 or newer is required (found $BASH_VERSION)" >&2
+    exit 1
+  fi
+else
+  if (( BASH_VERSINFO[0] < 4 )); then
+    echo "[error] Bash 4.0 or newer is required (found $BASH_VERSION)" >&2
+    exit 1
+  fi
+fi
+
 append_pkg_config_path() {
   local new_path="$1"
   if [[ ":$PKG_CONFIG_PATH:" != *":$new_path:"* ]]; then
@@ -203,7 +220,7 @@ import() {
           fi
           local is_updatable=true
           if [[ "$value" =~ ^\$ ]]; then
-            var_ref="${value^^}"
+            var_ref="$(echo "$value" | tr '[:lower:]' '[:upper:]')"
             var_ref="${var_ref//-/_}"
             var_ref="LIB_${var_ref#\$}_VERSION"
             var_ref="${!var_ref}"
@@ -217,7 +234,7 @@ import() {
             fi
           fi
           key=$(basename "$raw_key")
-          key="${key^^}"
+          key="$(echo "$key" | tr '[:lower:]' '[:upper:]')"
           key="${key//-/_}"
           version_var="LIB_${key}_VERSION"
           source_var="LIB_${key}_SOURCE"
@@ -281,6 +298,7 @@ update_dependencies() {
   for var in $(compgen -v | grep 'LIB_.*_UPDATABLE$'); do
     local source_var="${var/_UPDATABLE/_SOURCE}"
     local version_var="${var/_UPDATABLE/_VERSION}"
+    local rgx
     version_var="${!version_var}"
     local git_var="${var/_UPDATABLE/_GIT}"
     git_var="${!git_var}"
@@ -306,7 +324,13 @@ update_dependencies() {
     echo "       Current version: $version_var" >&2
     echo "       Updating to $latest_version" >&2
 
-    sed -i "s|^$git_var=.*|$git_var=$latest_version|" "${!source_var/\//}"
+    source_var="${!source_var/\//}"
+    rgx="s|^$git_var=.*|$git_var=$latest_version|"
+    if is_macos; then
+      sed -i "" "$rgx" "$source_var"
+    else
+      sed -i "$rgx" "$source_var"
+    fi
     echo "[info] Updated $git_var to $latest_version" >&2
   done
 }
@@ -340,7 +364,7 @@ git_api_request() {
       return 1
     fi
 
-    echo "$content" | grep -oP '"name":\s*"\K[^"]+'
+    echo "$content" | grep -o '"name":\s*"[^\"]*"' | perl -nle 'print $1 if /"name":\s*"([^"]+)"/'
 
     if [[ "$repo" =~ ^gitlab.com* ]]; then
       next_page=$(echo "$response" | grep -i "X-Next-Page" | awk '{print $2}')
@@ -350,7 +374,7 @@ git_api_request() {
         next_page=1
       fi
     else
-      length=$(echo "$content" | tr -d '\n' | grep -oP '{.*?}' | wc -l)
+      length=$(echo "$content" | tr -d '\n' | grep -o '{[^}]*}' | wc -l)
       if [[ "$length" -eq 100 ]]; then
         next_page=1
       else
@@ -365,19 +389,18 @@ git_api_request() {
   done
 }
 
-escape_regex() {
-  local str="$1"
-  str="${str//\\/\\\\}"
-  str="${str//\./\\.}"
-  echo "$str"
-}
-
 write_cache() {
   local index_name="$1"
   local repo="$2"
   local value="$3"
+  local rgx=""
   if [[ -f "$CACHE_FILE" ]] && grep -q "^$index_name:$repo=" "$CACHE_FILE"; then
-    sed -i "s|^$index_name:$repo=.*|$index_name:$repo=$value|" "$CACHE_FILE"
+    rgx="s|^$index_name:$repo=.*|$index_name:$repo=$value|"
+    if is_macos; then
+      sed -i "" "$rgx" "$CACHE_FILE"
+    else
+      sed -i "$rgx" "$CACHE_FILE"
+    fi
   else
     echo "$index_name:$repo=$value" >> "$CACHE_FILE"
   fi
@@ -477,12 +500,14 @@ find_latest_version() {
     suffix=".*-$(echo "$base_version" | sed -E 's/.*[0-9]+-//')$"
   fi
   base_version="$(apply_separator "$base_version" "$separator")"
+  pattern_version="^$(echo "$base_version" | perl -pe 's/\d+/\\d+/g; s/\./\\./g; s/\//\\\//g;')$"
 
   apply_separator "$(echo "$tags" \
     | grep "^$prefix$void_prefix$suffix" \
     | while read -r tag; do
         ver="${tag/$prefix/}"
-        if [[ "$ver" == "$base_version" || "$ver" > "$base_version" ]] && [[ ! "$ver" =~ -rc[0-9]+$ ]]; then
+        if [[ "$ver" == "$base_version" || "$ver" > "$base_version" ]] && \
+            echo "$ver" | perl -ne 'exit 1 unless /'"$pattern_version"'/'; then
           echo "$ver"
         fi
       done \
@@ -507,7 +532,7 @@ url_encode() {
 
 dependency_version() {
   local key="$1"
-  key="${key^^}"
+  key="$(echo "$key" | tr '[:lower:]' '[:upper:]')"
   key="${key//-/_}"
   local tag_prefix="LIB_${key}_PREFIX"
   local version_var="LIB_${key}_VERSION"
@@ -688,7 +713,7 @@ build_and_install() {
     shift 3
   else
     lib_name="${1%%/*}"
-    lib_name="${lib_name^^}"
+    lib_name="$(echo "$lib_name" | tr '[:lower:]' '[:upper:]')"
     lib_name="${lib_name//-/_}"
     [[ "$1" == */* ]] && sub_path="${1#*/}"
     local git_var="LIB_${lib_name}_GIT"
@@ -844,10 +869,26 @@ build_and_install() {
       executable_command=(cmake)
       build_tool=$(process_args get "-G" "${new_args[@]}")
       dir_after_build=$(process_args get "-B" "${new_args[@]}")
-      mapfile -t new_args < <(process_args filter "-G" "${new_args[@]}")
-      mapfile -t new_args < <(process_args filter "-B" "${new_args[@]}")
-      mapfile -t new_args < <(process_args filter "-DCMAKE_INSTALL_PREFIX" "${new_args[@]}")
-      mapfile -t new_args < <(process_args filter "-DBUILD_SHARED_LIBS" "${new_args[@]}")
+      tmp_args=()
+      while IFS= read -r line; do
+        tmp_args+=("$line")
+      done < <(process_args filter "-G" "${new_args[@]}")
+      new_args=("${tmp_args[@]}")
+      tmp_args=()
+      while IFS= read -r line; do
+        tmp_args+=("$line")
+      done < <(process_args filter "-B" "${new_args[@]}")
+      new_args=("${tmp_args[@]}")
+      tmp_args=()
+      while IFS= read -r line; do
+        tmp_args+=("$line")
+      done < <(process_args filter "-DCMAKE_INSTALL_PREFIX" "${new_args[@]}")
+      new_args=("${tmp_args[@]}")
+      tmp_args=()
+      while IFS= read -r line; do
+        tmp_args+=("$line")
+      done < <(process_args filter "-DBUILD_SHARED_LIBS" "${new_args[@]}")
+      new_args=("${tmp_args[@]}")
       if [[ -z "$build_tool" ]]; then
         build_tool="Unix Makefiles"
       fi
@@ -911,11 +952,17 @@ save_headers() {
   "$@"
   touch "$tmp_after"
   if [[ -d "$build_dir/include" ]]; then
-    mapfile -t new_headers < <(find "$build_dir/include" -type f \( -name "*.h" -o -name "*.hpp" \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
+    local new_headers=()
+    while IFS= read -r line; do
+      new_headers+=("$line")
+    done < <(find "$build_dir/include" -type f \( -name "*.h" -o -name "*.hpp" \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
     old_cache=$(read_cache "lib_include" "$git_var")
     IFS=';' read -r -a old_headers <<< "$old_cache"
     all_headers=("${old_headers[@]}" "${new_headers[@]}")
-    mapfile -t unique_headers < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
+    local unique_headers=()
+    while IFS= read -r line; do
+      unique_headers+=("$line")
+    done < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
     write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
   fi
   rm "$tmp_before" "$tmp_after"
@@ -931,7 +978,7 @@ copy_libs() {
       "$lib_name"
     )
   fi
-  import_lib_name="${lib_name^^}"
+  import_lib_name="$(echo "$lib_name" | tr '[:lower:]' '[:upper:]')"
   import_lib_name="${import_lib_name//-/_}"
   git_var="LIB_${import_lib_name}_GIT"
   git_var="${!git_var}"
@@ -997,7 +1044,7 @@ convert_to_static() {
       "$lib_name"
     )
   fi
-  import_lib_name="${lib_name^^}"
+  import_lib_name="$(echo "$lib_name" | tr '[:lower:]' '[:upper:]')"
   import_lib_name="${import_lib_name//-/_}"
   git_var="LIB_${import_lib_name}_GIT"
   git_var="${!git_var}"
