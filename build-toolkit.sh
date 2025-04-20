@@ -30,6 +30,7 @@ done
 export BUILD_KIT_DIR
 BUILD_KIT_DIR="$(pwd)/.buildkit"
 export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
+export DEFAULT_TOOLS_FOLDER="$BUILD_KIT_DIR/tools"
 
 export CACHE_FILE
 if $RUN_NO_CACHE; then
@@ -979,6 +980,65 @@ copy_libs() {
       exit 1
     fi
   done
+}
+
+convert_to_static() {
+  local lib_name="$1"
+  shift 1
+  local libs_list=("$@")
+  if [[ ${#libs_list[@]} -eq 0 ]]; then
+    libs_list=(
+      "$lib_name"
+    )
+  fi
+  import_lib_name="${lib_name^^}"
+  import_lib_name="${import_lib_name//-/_}"
+  git_var="LIB_${import_lib_name}_GIT"
+  git_var="${!git_var}"
+  if [[ -z "$git_var" ]]; then
+    echo "[error] No dependency found for $lib_name" >&2
+    exit 1
+  fi
+  base_path=$(read_cache "lib" "$git_var")
+  if [[ -z "$base_path" ]]; then
+    echo "[error] No build directory found for $lib_name" >&2
+    echo "        please build the library first" >&2
+    exit 1
+  fi
+  local curr_dir;
+  local init_file;
+  local tramp_file;
+  curr_dir="$(pwd)"
+  local lib_dir="$base_path/lib"
+  cd "$DEFAULT_TOOLS_FOLDER" || exit 1
+  if [[ ! -d "$DEFAULT_TOOLS_FOLDER/Implib.so" ]]; then
+    run git clone "https://github.com/yugr/Implib.so" --depth 1
+  fi
+  cd "Implib.so" || exit 1
+  for lib in "${libs_list[@]}"; do
+    local lib_file
+    lib_file=$(os_lib_format "dynamic" "$lib" "no_windows")
+    echo "[info] Converting $lib_file to static" >&2
+    found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
+    if [[ -n "$found_file" ]]; then
+      real_file=$(resolve_realpath "$found_file")
+      lib_file_output=$(os_lib_format "static" "$(basename "$found_file")")
+      python implib-gen.py -q -o build "$real_file" || exit 1
+      cd build || exit 1
+      init_file="$(basename "$real_file").init"
+      tramp_file="$(basename "$real_file").tramp"
+      gcc -fPIC -c "$init_file.c" "$tramp_file.S"
+      ar rcs "$lib_file_output" "$init_file.o" "$tramp_file.o"
+      mv "$lib_file_output" "$lib_dir/$lib_file_output"
+    else
+      echo "[error] Library $lib_file not found in $lib_dir" >&2
+      exit 1
+    fi
+    cd .. || exit 1
+    rm -rf build
+  done
+  cd "$curr_dir" || exit 1
+  write_cache "lib_kind" "$git_var" "static"
 }
 
 quote_args() {
