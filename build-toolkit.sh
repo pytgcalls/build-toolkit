@@ -7,7 +7,6 @@ append_pkg_config_path() {
   fi
 }
 
-export PKG_CONFIG_PATH
 append_pkg_config_path /usr/local/lib/pkgconfig
 append_pkg_config_path /usr/local/share/pkgconfig
 append_pkg_config_path /usr/lib/pkgconfig
@@ -684,6 +683,7 @@ configure_autogen() {
 
 build_and_install() {
   local repo_url=$1
+  local sub_path=""
   if [[ "$repo_url" =~ ^http(s)* ]]; then
     local branch=$2
     local build_type=$3
@@ -724,7 +724,10 @@ build_and_install() {
   local setup_commands=""
   local cleanup_commands=""
   local build_dir=""
+  local build_tool=""
+  local dir_after_build=""
   local new_args=()
+  local executable_command=()
   current_dir="$(pwd)"
 
   for arg in "$@"; do
@@ -806,8 +809,6 @@ build_and_install() {
   fi
   write_cache "lib" "$git_var" "$build_dir"
 
-  executable_command=()
-  dir_after_build=""
   case "$build_type" in
     autogen|autogen-static)
       executable_command=("./autogen.sh")
