@@ -900,13 +900,15 @@ save_headers() {
   touch "$tmp_before"
   "$@"
   touch "$tmp_after"
-  mapfile -t new_headers < <(find "$build_dir/include" -type f \( -name "*.h" -o -name "*.hpp" \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
+  if [[ -d "$build_dir/include" ]]; then
+    mapfile -t new_headers < <(find "$build_dir/include" -type f \( -name "*.h" -o -name "*.hpp" \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
+    old_cache=$(read_cache "lib_include" "$git_var")
+    IFS=';' read -r -a old_headers <<< "$old_cache"
+    all_headers=("${old_headers[@]}" "${new_headers[@]}")
+    mapfile -t unique_headers < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
+    write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
+  fi
   rm "$tmp_before" "$tmp_after"
-  old_cache=$(read_cache "lib_include" "$git_var")
-  IFS=';' read -r -a old_headers <<< "$old_cache"
-  all_headers=("${old_headers[@]}" "${new_headers[@]}")
-  mapfile -t unique_headers < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
-  write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
 }
 
 copy_libs() {
