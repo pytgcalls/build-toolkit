@@ -1019,6 +1019,8 @@ convert_to_static() {
   local tramp_file;
   curr_dir="$(pwd)"
   local lib_dir="$base_path/lib"
+
+  mkdir -p "$DEFAULT_TOOLS_FOLDER"
   cd "$DEFAULT_TOOLS_FOLDER" || exit 1
   if [[ ! -d "$DEFAULT_TOOLS_FOLDER/Implib.so" ]]; then
     run git clone "https://github.com/yugr/Implib.so" --depth 1
