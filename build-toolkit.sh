@@ -850,7 +850,8 @@ build_and_install() {
       configure_autogen
       ;;
   esac
-  run "${merged_commands[@]}"
+  write_cache "lib_include" "$git_var" ";"
+  save_headers run "${merged_commands[@]}"
 
   if ! $skip_build; then
     if [[ -n "$dir_after_build" ]]; then
@@ -858,12 +859,12 @@ build_and_install() {
     fi
     if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
       run make clean
-      run make -j"$(cpu_count)" --ignore-errors=2
+      save_headers run make -j"$(cpu_count)" --ignore-errors=2
       save_headers run make install
     else
       run python -m ninja -C build -t clean
       save_headers run python -m ninja -C build -j"$(cpu_count)"
-      run python -m ninja -C build install
+      save_headers run python -m ninja -C build install
     fi
   fi
   if [ -n "$cleanup_commands" ]; then
@@ -881,9 +882,13 @@ save_headers() {
   touch "$tmp_before"
   "$@"
   touch "$tmp_after"
-  mapfile -t headers < <(find "$build_dir" -type f \( -name "*.h" -o -name "*.hpp" \) -newer "$tmp_before" ! -newer "$tmp_after" | sort -u)
+  mapfile -t new_headers < <(find "$build_dir/include" -type f \( -name "*.h" -o -name "*.hpp" \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
   rm "$tmp_before" "$tmp_after"
-  write_cache "lib_include" "$git_var" "$(printf "%s;" "${headers[@]}")"
+  old_cache=$(read_cache "lib_include" "$git_var")
+  IFS=';' read -r -a old_headers <<< "$old_cache"
+  all_headers=("${old_headers[@]}" "${new_headers[@]}")
+  mapfile -t unique_headers < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
+  write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
 }
 
 copy_libs() {
