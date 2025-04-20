@@ -50,7 +50,7 @@ os_lib_format() {
     static)
       is_static=true
       ;;
-    shared)
+    dynamic)
       is_static=false
       ;;
     *)
