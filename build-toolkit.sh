@@ -691,6 +691,32 @@ require() {
         echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
       fi
       ;;
+    ndk)
+      if is_android; then
+        if [[ "$ANDROID_NDK_ROOT" == "" ]]; then
+          export ANDROID_API=21
+          platform_name="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "$platform_name" in
+              cygwin*|mingw*|msys*)
+                platform_name="windows"
+                ;;
+          esac
+          mkdir -p "$DEFAULT_TOOLS_FOLDER"
+          ndk_name="android-ndk-r26b"
+          export ANDROID_NDK_ROOT="$DEFAULT_TOOLS_FOLDER/$ndk_name"
+          if [ ! -d "$DEFAULT_TOOLS_FOLDER" ]; then
+            run curl -L "https://dl.google.com/android/repository/$ndk_name-$platform_name.zip" -o "$DEFAULT_TOOLS_FOLDER/android-ndk.zip"
+            run unzip -q "$DEFAULT_TOOLS_FOLDER/android-ndk.zip" -d "$DEFAULT_TOOLS_FOLDER"
+            rm "$DEFAULT_TOOLS_FOLDER/android-ndk.zip"
+          fi
+        elif [[ ! -d "$ANDROID_NDK_ROOT" ]]; then
+          echo "[error] ANDROID_NDK_ROOT is set but the directory does not exist" >&2
+          exit 1
+        fi
+        export ANDROID_PREBUILT;
+        ANDROID_PREBUILT="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+      fi
+      ;;
     *)
       echo "[error] Unknown requirement: $1" >&2
       exit 1
@@ -1196,4 +1222,29 @@ resolve_realpath() {
     fi
   done
   echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+}
+
+android_tool() {
+  local tool="$1"
+  local arch="$2"
+
+  case "$tool" in
+    cc|cxx)
+      local clang_ex="clang"
+      if [[ "$tool" == "cxx" ]]; then
+        clang_ex="clang++"
+      fi
+      echo "$ANDROID_PREBUILT/bin/$arch-linux-android$ANDROID_API-$clang_ex"
+      ;;
+    ar|ranlib|nm|strip)
+      echo "$ANDROID_PREBUILT/bin/llvm-$tool"
+      ;;
+    sysroot)
+      echo "$ANDROID_PREBUILT/sysroot"
+      ;;
+    *)
+      echo "[error] Unknown tool: $tool" >&2
+      exit 1
+      ;;
+  esac
 }
