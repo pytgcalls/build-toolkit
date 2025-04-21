@@ -1114,13 +1114,21 @@ convert_to_static() {
 
 quote_args() {
   local first=true
+  local unsafe_re="[[:space:]\$\&\|\>\<\;\(\)\*\'\"]"
   for arg in "$@"; do
     if ! $first; then
       printf " "
     else
       first=false
     fi
-    if [[ "$arg" =~ [[:space:]\$\&\|\>\<\;\(\)\*\'\"] ]]; then
+    if [[ "$arg" == *=* ]]; then
+      local key="${arg%%=*}"
+      local value="${arg#*=}"
+      if [[ "$value" =~ $unsafe_re ]]; then
+        value="\"${value//\"/\\\"}\""
+      fi
+      printf "%s=%s" "$key" "$value"
+    elif [[ "$arg" =~ $unsafe_re ]]; then
       printf "\"%s\"" "${arg//\"/\\\"}"
     else
       printf "%s" "$arg"
