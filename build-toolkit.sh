@@ -1163,11 +1163,19 @@ copy_libs() {
   for lib in "${libs_list[@]}"; do
     local lib_rgx
     if [[ "$is_static" == "static" ]]; then
-      lib_rgx="$lib_dir/\(lib\)?${lib#lib}\.\(a\|lib\)"
+      lib_rgx="(lib)?${lib#lib}\.(a|lib)"
     else
-      lib_rgx="$lib_dir/\(lib\)?${lib#lib}\.\(so\|dll\|dylib\)"
+      lib_rgx="(lib)?${lib#lib}\.(so|dll|dylib)"
     fi
-    found_file=$(find "$lib_dir" -maxdepth 1 -iregex "$lib_rgx" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
+    found_file=$(
+      find "$lib_dir" -maxdepth 1 \( -type f -o -type l \) \
+      | while read -r f; do
+          if [ -f "$f" ] && echo "$f" | grep -Ei "$lib_rgx" >/dev/null; then
+            echo "$f"
+            break
+          fi
+        done
+    )
     if [[ -n "$found_file" ]]; then
       real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
