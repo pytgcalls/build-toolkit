@@ -1277,6 +1277,9 @@ android_tool() {
     sysroot)
       echo "$ANDROID_PREBUILT/sysroot"
       ;;
+    toolchain)
+      echo "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
+      ;;
     *)
       echo "[error] Unknown tool: $tool" >&2
       exit 1
