@@ -1008,23 +1008,83 @@ save_headers() {
   rm "$tmp_before" "$tmp_after"
 }
 
+normalize_arch() {
+  local arch_name="$1"
+  local style="$2"
+  if [[ -z "$style" ]]; then
+    style="arch"
+  fi
+
+  arch_output=""
+  case "$arch_name" in
+    x86_64|x86-64|amd64)
+      arch_output="x86_64"
+      case "$style" in
+        cpu)
+          arch_output="x86-64"
+        ;;
+        arch|ndk|fancy)
+          arch_output="x86_64"
+        ;;
+      esac
+    ;;
+    arm64|aarch64|armv8-a|arm64-v8a)
+      case "$style" in
+        fancy)
+          arch_output="arm64-v8a"
+        ;;
+        arch|ndk)
+          arch_output="aarch64"
+        ;;
+        cpu)
+          arch_output="armv8-a"
+        ;;
+      esac
+    ;;
+    armhf|armv7l|arm|armv7-a)
+      case "$style" in
+        fancy)
+          arch_output="armeabi-v7a"
+        ;;
+        arch)
+          arch_output="arm"
+        ;;
+        cpu|ndk)
+          arch_output="armv7-a"
+        ;;
+      esac
+    ;;
+    x86|i386|i686)
+      case "$style" in
+        arch|fancy)
+          arch_output="x86"
+        ;;
+        cpu|ndk)
+          arch_output="i686"
+        ;;
+      esac
+    ;;
+    *)
+      echo "[error] Unknown architecture: $arch_name" >&2
+      exit 1
+  esac
+
+  if [[ -z "$arch_output" ]]; then
+    echo "[error] Unknown architecture style: $style" >&2
+    exit 1
+  fi
+
+  echo "$arch_output"
+}
+
 copy_libs() {
   local lib_name="$1"
   local dest_dir="$2"
   local arch_name="$3"
   if [[ -n "$arch_name" ]]; then
     case "$arch_name" in
-      x86_64|amd64)
-        arch_name="x86_64"
-        ;;
-      arm64|aarch64)
-        arch_name="arm64-v8a"
-        ;;
-      armhf|armv7l)
-        arch_name="armeabi-v7a"
-        ;;
-      x86|i386)
-        arch_name="x86"
+      x86_64|x86-64|amd64|arm64|aarch64|armv8-a|arm64-v8a|armhf|armv7l|arm|armv7-a|x86|i386|i686)
+        arch_name="$(normalize_arch "$arch_name" "fancy")"
         ;;
       default)
         arch_name=""
@@ -1262,6 +1322,9 @@ resolve_realpath() {
 android_tool() {
   local tool="$1"
   local arch="$2"
+  if [[ -n "$arch" ]]; then
+    arch="$(normalize_arch "$arch" "ndk")"
+  fi
 
   case "$tool" in
     cc|cxx)
