@@ -691,9 +691,9 @@ require() {
         echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
       fi
       ;;
-    ndk)
+    ndk|ndk-local)
       if is_android; then
-        if [[ "$ANDROID_NDK_ROOT" == "" ]]; then
+        if [[ -z "$ANDROID_NDK_ROOT" || "$1" == "ndk" ]]; then
           export ANDROID_API=21
           platform_name="$(uname -s | tr '[:upper:]' '[:lower:]')"
           case "$platform_name" in
@@ -704,7 +704,7 @@ require() {
           mkdir -p "$DEFAULT_TOOLS_FOLDER"
           ndk_name="android-ndk-r26b"
           export ANDROID_NDK_ROOT="$DEFAULT_TOOLS_FOLDER/$ndk_name"
-          if [ ! -d "$DEFAULT_TOOLS_FOLDER" ]; then
+          if [ ! -d "$ANDROID_NDK_ROOT" ]; then
             run curl -L "https://dl.google.com/android/repository/$ndk_name-$platform_name.zip" -o "$DEFAULT_TOOLS_FOLDER/android-ndk.zip"
             run unzip -q "$DEFAULT_TOOLS_FOLDER/android-ndk.zip" -d "$DEFAULT_TOOLS_FOLDER"
             rm "$DEFAULT_TOOLS_FOLDER/android-ndk.zip"
