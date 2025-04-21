@@ -949,6 +949,9 @@ build_and_install() {
     configure|configure-static)
       configure_autogen
       ;;
+    cmake|cmake-static)
+      rm -rf "$dir_after_build"
+      ;;
   esac
   write_cache "lib_include" "$git_var" ";"
   if [[ -n "${merged_commands[*]}" ]]; then
