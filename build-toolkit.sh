@@ -1018,6 +1018,10 @@ normalize_arch() {
     style="arch"
   fi
 
+  if [[ "$arch_name" == "default" ]]; then
+    arch_name="$(uname -m)"
+  fi
+
   arch_output=""
   case "$arch_name" in
     x86_64|x86-64|amd64)
@@ -1336,6 +1340,9 @@ resolve_realpath() {
 android_tool() {
  local tool="$1"
  local arch="$2"
+ if ! is_android; then
+   return 1
+ fi
  if [[ -n "$arch" ]]; then
    arch="$(normalize_arch "$arch" "ndk")"
  fi
