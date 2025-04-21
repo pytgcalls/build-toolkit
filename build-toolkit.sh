@@ -74,28 +74,19 @@ os_lib_format() {
       ;;
   esac
 
-  no_windows=false
-  if [[ "$3" == "no_windows" ]] && is_windows; then
-    no_windows=true
-  fi
-
-  if [[ "$2" =~ ^lib ]] && (is_macos || is_linux || no_windows); then
-    lib_name="${2#lib}"
-  else
-    lib_name="$2"
-  fi
+  lib_name="${2#lib}"
   lib_name="${lib_name%.a}"
   lib_name="${lib_name%.dylib}"
   lib_name="${lib_name%.dll}"
   lib_name="${lib_name%.so}"
 
-  if is_windows && ! $no_windows; then
+  if is_windows; then
     if $is_static; then
       echo "$lib_name.lib"
     else
       echo "$lib_name.dll"
     fi
-  elif is_linux || $no_windows; then
+  elif is_linux; then
     if $is_static; then
       echo "lib$lib_name.a"
     else
@@ -1027,16 +1018,20 @@ copy_libs() {
   fi
 
   for lib in "${libs_list[@]}"; do
-    local lib_file
-    lib_file=$(os_lib_format "$is_static" "$lib" "no_windows")
-    found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
+    local lib_rgx
+    if [[ "$is_static" == "static" ]]; then
+      lib_rgx="$lib_dir/\(lib\)?${lib#lib}\.\(a\|lib\)"
+    else
+      lib_rgx="$lib_dir/\(lib\)?${lib#lib}\.\(so\|dll\|dylib\)"
+    fi
+    found_file=$(find "$lib_dir" -maxdepth 1 -iregex "$lib_rgx" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
     if [[ -n "$found_file" ]]; then
       real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
       echo "[info] Copying $is_static library $lib_file_output" >&2
       cp "$real_file" "$dest_dir/lib/$lib_file_output"
     else
-      echo "[error] Library $lib_file not found in $lib_dir" >&2
+      echo "[error] Library $(os_lib_format "$is_static" "$lib") not found in $lib_dir" >&2
       exit 1
     fi
   done
@@ -1079,7 +1074,7 @@ convert_to_static() {
   cd "Implib.so" || exit 1
   for lib in "${libs_list[@]}"; do
     local lib_file
-    lib_file=$(os_lib_format "dynamic" "$lib" "no_windows")
+    lib_file=$(os_lib_format "dynamic" "$lib")
     echo "[info] Converting $lib_file to static" >&2
     found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
     if [[ -n "$found_file" ]]; then
