@@ -1011,7 +1011,37 @@ save_headers() {
 copy_libs() {
   local lib_name="$1"
   local dest_dir="$2"
-  shift 2
+  local arch_name="$3"
+  if [[ -n "$arch_name" ]]; then
+    case "$arch_name" in
+      x86_64|amd64)
+        arch_name="x86_64"
+        ;;
+      arm64|aarch64)
+        arch_name="arm64-v8a"
+        ;;
+      armhf|armv7l)
+        arch_name="armeabi-v7a"
+        ;;
+      x86|i386)
+        arch_name="x86"
+        ;;
+      default)
+        arch_name=""
+        shift 1
+        ;;
+      *)
+        arch_name=""
+        ;;
+    esac
+    if [[ -z "$arch_name" ]]; then
+      shift 2
+    else
+      shift 3
+    fi
+  else
+    shift 2
+  fi
   local libs_list=("$@")
   if [[ ${#libs_list[@]} -eq 0 ]]; then
     libs_list=(
@@ -1048,7 +1078,12 @@ copy_libs() {
     exit 1
   fi
 
-  mkdir -p "$dest_dir/lib"
+  output_libs_dir="$dest_dir/lib"
+  if [[ -n "$arch_name" ]]; then
+    output_libs_dir="$output_libs_dir/$arch_name"
+  fi
+
+  mkdir -p "$output_libs_dir"
 
   if [[ -n "${headers[*]}" ]]; then
     for header in "${headers[@]}"; do
@@ -1071,7 +1106,7 @@ copy_libs() {
       real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
       echo "[info] Copying $is_static library $lib_file_output" >&2
-      cp "$real_file" "$dest_dir/lib/$lib_file_output"
+      cp "$real_file" "$output_libs_dir/$lib_file_output"
     else
       echo "[error] Library $(os_lib_format "$is_static" "$lib") not found in $lib_dir" >&2
       exit 1
