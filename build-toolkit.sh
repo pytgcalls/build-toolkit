@@ -1,279 +1,279 @@
-#!/usr/bin/env bash
+ #!/usr/bin/env bash
 
-if [[ -z "$BASH_VERSION" ]]; then
-  echo "[error] This script must be run with Bash (BASH_VERSION is not set)" >&2
-  exit 1
-fi
+ if [[ -z "$BASH_VERSION" ]]; then
+   echo "[error] This script must be run with Bash (BASH_VERSION is not set)" >&2
+   exit 1
+ fi
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  if (( BASH_VERSINFO[0] < 3 && BASH_VERSINFO[1] < 2 )); then
-    echo "[error] Bash 3.2 or newer is required (found $BASH_VERSION)" >&2
-    exit 1
-  fi
-else
-  if (( BASH_VERSINFO[0] < 4 )); then
-    echo "[error] Bash 4.0 or newer is required (found $BASH_VERSION)" >&2
-    exit 1
-  fi
-fi
+ if [[ "$(uname -s)" == "Darwin" ]]; then
+   if (( BASH_VERSINFO[0] < 3 && BASH_VERSINFO[1] < 2 )); then
+     echo "[error] Bash 3.2 or newer is required (found $BASH_VERSION)" >&2
+     exit 1
+   fi
+ else
+   if (( BASH_VERSINFO[0] < 4 )); then
+     echo "[error] Bash 4.0 or newer is required (found $BASH_VERSION)" >&2
+     exit 1
+   fi
+ fi
 
-append_pkg_config_path() {
-  local new_path="$1"
-  if [[ ":$PKG_CONFIG_PATH:" != *":$new_path:"* ]]; then
-    export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$new_path"
-  fi
-}
+ append_pkg_config_path() {
+   local new_path="$1"
+   if [[ ":$PKG_CONFIG_PATH:" != *":$new_path:"* ]]; then
+     export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$new_path"
+   fi
+ }
 
-append_pkg_config_path /usr/local/lib/pkgconfig
-append_pkg_config_path /usr/local/share/pkgconfig
-append_pkg_config_path /usr/lib/pkgconfig
-export ACLOCAL_PATH=/usr/share/aclocal
+ append_pkg_config_path /usr/local/lib/pkgconfig
+ append_pkg_config_path /usr/local/share/pkgconfig
+ append_pkg_config_path /usr/lib/pkgconfig
+ export ACLOCAL_PATH=/usr/share/aclocal
 
-RUN_UPDATES=false
-RUN_NO_CACHE=false
-export OS_NAME
-OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
-: "${MAIN_SCRIPT:="$0"}"
+ RUN_UPDATES=false
+ RUN_NO_CACHE=false
+ export OS_NAME
+ OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ : "${MAIN_SCRIPT:="$0"}"
 
-for arg in "$@"; do
-  if [[ $arg == --update ]]; then
-    RUN_UPDATES=true
-  elif [[ $arg == --no-cache ]]; then
-    RUN_NO_CACHE=true
-  elif [[ $arg == --platform=* ]]; then
-    export OS_NAME="${arg#--platform=}"
-  fi
-done
+ for arg in "$@"; do
+   if [[ $arg == --update ]]; then
+     RUN_UPDATES=true
+   elif [[ $arg == --no-cache ]]; then
+     RUN_NO_CACHE=true
+   elif [[ $arg == --platform=* ]]; then
+     export OS_NAME="${arg#--platform=}"
+   fi
+ done
 
-export BUILD_KIT_DIR
-BUILD_KIT_DIR="$(pwd)/.buildkit"
-export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
-export DEFAULT_TOOLS_FOLDER="$BUILD_KIT_DIR/tools"
+ export BUILD_KIT_DIR
+ BUILD_KIT_DIR="$(pwd)/.buildkit"
+ export DEFAULT_BUILD_FOLDER="$BUILD_KIT_DIR/build"
+ export DEFAULT_TOOLS_FOLDER="$BUILD_KIT_DIR/tools"
 
-export CACHE_FILE
-if $RUN_NO_CACHE; then
-  CACHE_FILE="$(mktemp)"
-  trap '[[ -f "$CACHE_FILE" ]] && rm -f "$CACHE_FILE"' EXIT
-else
-  CACHE_FILE="$BUILD_KIT_DIR/fox.cache"
-fi
+ export CACHE_FILE
+ if $RUN_NO_CACHE; then
+   CACHE_FILE="$(mktemp)"
+   trap '[[ -f "$CACHE_FILE" ]] && rm -f "$CACHE_FILE"' EXIT
+ else
+   CACHE_FILE="$BUILD_KIT_DIR/fox.cache"
+ fi
 
-export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
-export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
+ export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
+ export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
 
-mkdir -p "$BUILD_KIT_DIR"
+ mkdir -p "$BUILD_KIT_DIR"
 
-os_lib_format() {
-  local is_static=false
-  case "$1" in
-    static)
-      is_static=true
-      ;;
-    dynamic)
-      is_static=false
-      ;;
-    *)
-      echo "[error] Unknown library type: $1" >&2
-      exit 1
-      ;;
-  esac
+ os_lib_format() {
+   local is_static=false
+   case "$1" in
+     static)
+       is_static=true
+       ;;
+     dynamic)
+       is_static=false
+       ;;
+     *)
+       echo "[error] Unknown library type: $1" >&2
+       exit 1
+       ;;
+   esac
 
-  lib_name="${2#lib}"
-  lib_name="${lib_name%.a}"
-  lib_name="${lib_name%.dylib}"
-  lib_name="${lib_name%.dll}"
-  lib_name="${lib_name%.so}"
+   lib_name="${2#lib}"
+   lib_name="${lib_name%.a}"
+   lib_name="${lib_name%.dylib}"
+   lib_name="${lib_name%.dll}"
+   lib_name="${lib_name%.so}"
 
-  if is_windows; then
-    if $is_static; then
-      echo "$lib_name.lib"
-    else
-      echo "$lib_name.dll"
-    fi
-  elif is_linux || is_android; then
-    if $is_static; then
-      echo "lib$lib_name.a"
-    else
-      echo "lib$lib_name.so"
-    fi
-  elif is_macos; then
-    if $is_static; then
-      echo "lib$lib_name.a"
-    else
-      echo "lib$lib_name.dylib"
-    fi
-  else
-    echo "[error] Unknown OS: $(uname -s)" >&2
-    exit 1
-  fi
-}
+   if is_windows; then
+     if $is_static; then
+       echo "$lib_name.lib"
+     else
+       echo "$lib_name.dll"
+     fi
+   elif is_linux || is_android; then
+     if $is_static; then
+       echo "lib$lib_name.a"
+     else
+       echo "lib$lib_name.so"
+     fi
+   elif is_macos; then
+     if $is_static; then
+       echo "lib$lib_name.a"
+     else
+       echo "lib$lib_name.dylib"
+     fi
+   else
+     echo "[error] Unknown OS: $(uname -s)" >&2
+     exit 1
+   fi
+ }
 
-import() {
-  local is_import=true
-  local file_name=$1
-  local found_from=false
-  local remote_source=''
-  local internal_source=''
-  local content=''
+ import() {
+   local is_import=true
+   local file_name=$1
+   local found_from=false
+   local remote_source=''
+   local internal_source=''
+   local content=''
 
-  for arg in "$@"; do
-    if $is_import; then
-      is_import=false
-    elif [[ "$arg" == from ]]; then
-      found_from=true
-    elif $found_from; then
-      remote_source="$arg"
-      break
-    else
-      echo "[error] Invalid argument: $arg" >&2
-      return 1
-    fi
-  done
+   for arg in "$@"; do
+     if $is_import; then
+       is_import=false
+     elif [[ "$arg" == from ]]; then
+       found_from=true
+     elif $found_from; then
+       remote_source="$arg"
+       break
+     else
+       echo "[error] Invalid argument: $arg" >&2
+       return 1
+     fi
+   done
 
-  if [[ -z "$remote_source" ]] && $found_from; then
-    echo "No remote source provided for import $file_name" >&2
-    return 1
-  fi
+   if [[ -z "$remote_source" ]] && $found_from; then
+     echo "No remote source provided for import $file_name" >&2
+     return 1
+   fi
 
-  if [[ -z "$file_name" ]]; then
-    echo "No file name provided for import" >&2
-    return 1
-  fi
+   if [[ -z "$file_name" ]]; then
+     echo "No file name provided for import" >&2
+     return 1
+   fi
 
-  if [[ ! -f "$file_name" ]] && ! $found_from; then
-    echo "Failed to import $file_name, file not found" >&2
-    return 1
-  fi
+   if [[ ! -f "$file_name" ]] && ! $found_from; then
+     echo "Failed to import $file_name, file not found" >&2
+     return 1
+   fi
 
-  local allow_file_detection=true
-  if $found_from; then
-    case "$remote_source" in
-    python*)
-      if ! "$remote_source" -m pip show "$file_name" &>/dev/null; then
-        "$remote_source" -m pip install "$file_name" -U
-      fi
-      allow_file_detection=false
-      ;;
-    rust)
-      if ! cargo install --list | grep -q "^$file_name v"; then
-        cargo install "$file_name"
-      fi
-      allow_file_detection=false
-      ;;
-    *)
-      internal_source="$remote_source"
-      internal_source="${internal_source%/}"
-      internal_source="$internal_source/$file_name"
-      normalized_source="${remote_source#http://}"
+   local allow_file_detection=true
+   if $found_from; then
+     case "$remote_source" in
+     python*)
+       if ! "$remote_source" -m pip show "$file_name" &>/dev/null; then
+         "$remote_source" -m pip install "$file_name" -U
+       fi
+       allow_file_detection=false
+       ;;
+     rust)
+       if ! cargo install --list | grep -q "^$file_name v"; then
+         cargo install "$file_name"
+       fi
+       allow_file_detection=false
+       ;;
+     *)
+       internal_source="$remote_source"
+       internal_source="${internal_source%/}"
+       internal_source="$internal_source/$file_name"
+       normalized_source="${remote_source#http://}"
 
-      normalized_source="${normalized_source#https://}"
-      if [[ "$normalized_source" == github.com/* ]]; then
-        temp_remote="${normalized_source/github.com\//}"
-        temp_remote="${temp_remote%.git}"
-        repo_owner="${temp_remote%%/*}"
-        rest="${temp_remote#*/}"
-        repo_name="${rest%%/*}"
-        remote_source="github.com/$repo_owner/$repo_name"
-        internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master/$file_name"
-      fi
+       normalized_source="${normalized_source#https://}"
+       if [[ "$normalized_source" == github.com/* ]]; then
+         temp_remote="${normalized_source/github.com\//}"
+         temp_remote="${temp_remote%.git}"
+         repo_owner="${temp_remote%%/*}"
+         rest="${temp_remote#*/}"
+         repo_name="${rest%%/*}"
+         remote_source="github.com/$repo_owner/$repo_name"
+         internal_source="https://raw.githubusercontent.com/$repo_owner/$repo_name/master/$file_name"
+       fi
 
-      response=$(curl -L -s -w "%{http_code}" "$internal_source")
-      http_code="${response: -3}"
-      content="${response:0:${#response}-3}"
+       response=$(curl -L -s -w "%{http_code}" "$internal_source")
+       http_code="${response: -3}"
+       content="${response:0:${#response}-3}"
 
-      if [[ "$http_code" -ge 400 ]]; then
-        echo "[error] Failed to import: $file_name" >&2
-        echo "        source returned HTTP $http_code ($remote_source)" >&2
-        exit 1
-      elif [[ -z "$content" ]]; then
-        echo "[error] Failed to import: $file_name" >&2
-        echo "        empty content received from $remote_source" >&2
-        exit 1
-      fi
-      ;;
-    esac
-  else
-    content=$(<"$file_name")
-  fi
+       if [[ "$http_code" -ge 400 ]]; then
+         echo "[error] Failed to import: $file_name" >&2
+         echo "        source returned HTTP $http_code ($remote_source)" >&2
+         exit 1
+       elif [[ -z "$content" ]]; then
+         echo "[error] Failed to import: $file_name" >&2
+         echo "        empty content received from $remote_source" >&2
+         exit 1
+       fi
+       ;;
+     esac
+   else
+     content=$(<"$file_name")
+   fi
 
-  if $allow_file_detection; then
-    if [[ "$file_name" == *.properties ]]; then
-      while IFS= read -r line; do
-        if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-          raw_key="${BASH_REMATCH[1]}"
-          value="${BASH_REMATCH[2]}"
-          value="${value//$'\r'/}"
-           if [[ "$raw_key" =~ \.git$ ]]; then
-             raw_key="${raw_key%.git}"
-             echo "[warn] Trailing '.git' suffix detected in $raw_key" >&2
-             echo "       This suffix is not required for the import" >&2
-           fi
-          if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
-            echo "[error] Invalid import: $raw_key" >&2
-            echo "        invalid characters in import declaration" >&2
-            exit 1
-          fi
-          local is_updatable=true
-          if [[ "$value" =~ ^\$ ]]; then
-            var_ref="$(echo "$value" | tr '[:lower:]' '[:upper:]')"
-            var_ref="${var_ref//-/_}"
-            var_ref="LIB_${var_ref#\$}_VERSION"
-            var_ref="${!var_ref}"
-            if [[ -n "$var_ref" ]]; then
-              value="$var_ref"
-              is_updatable=false
-            else
-              echo "[error] Invalid import: $raw_key" >&2
-              echo "        invalid import reference in import declaration" >&2
-              exit 1
+   if $allow_file_detection; then
+     if [[ "$file_name" == *.properties ]]; then
+       while IFS= read -r line; do
+         if [[ "$line" =~ ^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+           raw_key="${BASH_REMATCH[1]}"
+           value="${BASH_REMATCH[2]}"
+           value="${value//$'\r'/}"
+            if [[ "$raw_key" =~ \.git$ ]]; then
+              raw_key="${raw_key%.git}"
+              echo "[warn] Trailing '.git' suffix detected in $raw_key" >&2
+              echo "       This suffix is not required for the import" >&2
             fi
-          fi
-          key=$(basename "$raw_key")
-          key="$(echo "$key" | tr '[:lower:]' '[:upper:]')"
-          key="${key//-/_}"
-          version_var="LIB_${key}_VERSION"
-          source_var="LIB_${key}_SOURCE"
-          if [[ -n "${!version_var}" ]]; then
-            echo "[warn] version for $raw_key already set" >&2
-            echo "       previous value  : ${!version_var}" >&2
-            echo "       declared at     : ${!source_var}" >&2
-            echo "       overriding with : $value" >&2
-            echo "       imported from   : $remote_source/$file_name" >&2
-          fi
-          if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
-            echo "[error] Invalid import: $raw_key" >&2
-            echo "        not an accepted source (only \"gitlab.com\", \"github.com\" or \"bitbucket.org\" allowed)" >&2
-            exit 1
-          fi
-          prefix=$(find_prefix_tag "$raw_key" "$value")
-          ret_code=$?
-          if [[ $ret_code -ne 0 ]]; then
-            exit 1
-          fi
-          pkg_config_path="$(read_cache "lib" "$raw_key")"
-          if [[ -n "$pkg_config_path" ]]; then
-            append_pkg_config_path "$pkg_config_path/lib/pkgconfig"
-          fi
-          export "$version_var=$value"
-          export "$source_var=$remote_source/$file_name"
-          export "LIB_${key}_GIT=$raw_key"
-          export "LIB_${key}_PREFIX=$prefix"
-          if $is_updatable; then
-            export "LIB_${key}_UPDATABLE=true"
-          fi
-        fi
-      done <<< "$content"
-    elif [[ "$file_name" == *.sh || "$file_name" == *.env ]]; then
-      source /dev/stdin <<< "$content"
-    else
-      echo "[error] Unknown import file type: $file_name" >&2
-      exit 1
-    fi
-  fi
+           if [[ ! "$raw_key" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+             echo "[error] Invalid import: $raw_key" >&2
+             echo "        invalid characters in import declaration" >&2
+             exit 1
+           fi
+           local is_updatable=true
+           if [[ "$value" =~ ^\$ ]]; then
+             var_ref="$(echo "$value" | tr '[:lower:]' '[:upper:]')"
+             var_ref="${var_ref//-/_}"
+             var_ref="LIB_${var_ref#\$}_VERSION"
+             var_ref="${!var_ref}"
+             if [[ -n "$var_ref" ]]; then
+               value="$var_ref"
+               is_updatable=false
+             else
+               echo "[error] Invalid import: $raw_key" >&2
+               echo "        invalid import reference in import declaration" >&2
+               exit 1
+             fi
+           fi
+           key=$(basename "$raw_key")
+           key="$(echo "$key" | tr '[:lower:]' '[:upper:]')"
+           key="${key//-/_}"
+           version_var="LIB_${key}_VERSION"
+           source_var="LIB_${key}_SOURCE"
+           if [[ -n "${!version_var}" ]]; then
+             echo "[warn] version for $raw_key already set" >&2
+             echo "       previous value  : ${!version_var}" >&2
+             echo "       declared at     : ${!source_var}" >&2
+             echo "       overriding with : $value" >&2
+             echo "       imported from   : $remote_source/$file_name" >&2
+           fi
+           if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
+             echo "[error] Invalid import: $raw_key" >&2
+             echo "        not an accepted source (only \"gitlab.com\", \"github.com\" or \"bitbucket.org\" allowed)" >&2
+             exit 1
+           fi
+           prefix=$(find_prefix_tag "$raw_key" "$value")
+           ret_code=$?
+           if [[ $ret_code -ne 0 ]]; then
+             exit 1
+           fi
+           pkg_config_path="$(read_cache "lib" "$raw_key")"
+           if [[ -n "$pkg_config_path" ]]; then
+             append_pkg_config_path "$pkg_config_path/lib/pkgconfig"
+           fi
+           export "$version_var=$value"
+           export "$source_var=$remote_source/$file_name"
+           export "LIB_${key}_GIT=$raw_key"
+           export "LIB_${key}_PREFIX=$prefix"
+           if $is_updatable; then
+             export "LIB_${key}_UPDATABLE=true"
+           fi
+         fi
+       done <<< "$content"
+     elif [[ "$file_name" == *.sh || "$file_name" == *.env ]]; then
+       source /dev/stdin <<< "$content"
+     else
+       echo "[error] Unknown import file type: $file_name" >&2
+       exit 1
+     fi
+   fi
 
-  local caller_file="${BASH_SOURCE[1]}"
-  local caller_line="${BASH_LINENO[0]}"
-  local last_line
+   local caller_file="${BASH_SOURCE[1]}"
+   local caller_line="${BASH_LINENO[0]}"
+   local last_line
   if [[ "$caller_file" != "$MAIN_SCRIPT" ]]; then
       return
   fi
@@ -1023,7 +1023,7 @@ normalize_arch() {
         cpu)
           arch_output="x86-64"
         ;;
-        arch|ndk|fancy)
+        arch|ndk|ndk-cpu|fancy)
           arch_output="x86_64"
         ;;
       esac
@@ -1033,7 +1033,7 @@ normalize_arch() {
         fancy)
           arch_output="arm64-v8a"
         ;;
-        arch|ndk)
+        arch|ndk|ndk-cpu)
           arch_output="aarch64"
         ;;
         cpu)
@@ -1041,16 +1041,19 @@ normalize_arch() {
         ;;
       esac
     ;;
-    armhf|armv7l|arm|armv7-a)
+    armhf|armv7l|armv7a|arm|armv7-a)
       case "$style" in
         fancy)
           arch_output="armeabi-v7a"
         ;;
-        arch)
+        arch|ndk-cpu)
           arch_output="arm"
         ;;
-        cpu|ndk)
+        cpu)
           arch_output="armv7-a"
+        ;;
+        ndk)
+          arch_output="armv7a"
         ;;
       esac
     ;;
@@ -1059,7 +1062,7 @@ normalize_arch() {
         arch|fancy)
           arch_output="x86"
         ;;
-        cpu|ndk)
+        cpu|ndk|ndk-cpu)
           arch_output="i686"
         ;;
       esac
@@ -1083,7 +1086,7 @@ copy_libs() {
   local arch_name="$3"
   if [[ -n "$arch_name" ]]; then
     case "$arch_name" in
-      x86_64|x86-64|amd64|arm64|aarch64|armv8-a|arm64-v8a|armhf|armv7l|arm|armv7-a|x86|i386|i686)
+      x86_64|x86-64|amd64|arm64|aarch64|armv8-a|arm64-v8a|armhf|armv7l|armv7a|arm|armv7-a|x86|i386|i686)
         arch_name="$(normalize_arch "$arch_name" "fancy")"
         ;;
       default)
@@ -1327,25 +1330,40 @@ android_tool() {
   fi
 
   case "$tool" in
-    cc|cxx)
-      local clang_ex="clang"
-      if [[ "$tool" == "cxx" ]]; then
-        clang_ex="clang++"
-      fi
-      echo "$ANDROID_PREBUILT/bin/$arch-linux-android$ANDROID_API-$clang_ex"
-      ;;
-    ar|ranlib|nm|strip)
-      echo "$ANDROID_PREBUILT/bin/llvm-$tool"
-      ;;
-    sysroot)
-      echo "$ANDROID_PREBUILT/sysroot"
-      ;;
-    toolchain)
-      echo "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
-      ;;
-    *)
-      echo "[error] Unknown tool: $tool" >&2
-      exit 1
-      ;;
-  esac
-}
+   cc|cxx)
+     local clang_ex="clang"
+     local abi_name=""
+     if [[ "$tool" == "cxx" ]]; then
+       clang_ex="clang++"
+     fi
+     abi_name="android"
+     if [[ "$arch" == "armv7a" ]]; then
+       abi_name="${abi_name}eabi"
+     fi
+     echo "$ANDROID_PREBUILT/bin/$arch-linux-$abi_name$ANDROID_API-$clang_ex"
+     ;;
+   ar|ranlib|nm|strip)
+     echo "$ANDROID_PREBUILT/bin/llvm-$tool"
+     ;;
+   sysroot)
+     echo "$ANDROID_PREBUILT/sysroot"
+     ;;
+   toolchain)
+     echo "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
+     ;;
+   builtins)
+     local builtin_path
+     lib_name="libclang_rt.builtins-$(normalize_arch "$arch" "ndk-cpu")-android.a"
+     builtin_path=$(find "$ANDROID_PREBUILT/lib/" -type f -name "$lib_name" | sort -V | tail -n 1)
+     if [[ -z "$builtin_path" ]]; then
+       echo "[error] $lib_name not found" >&2
+       exit 1
+     fi
+     echo "$builtin_path"
+     ;;
+   *)
+     echo "[error] Unknown tool: $tool" >&2
+     exit 1
+     ;;
+   esac
+ }
