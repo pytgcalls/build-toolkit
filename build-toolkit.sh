@@ -31,6 +31,8 @@ export ACLOCAL_PATH=/usr/share/aclocal
 
 RUN_UPDATES=false
 RUN_NO_CACHE=false
+export OS_NAME
+OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
 : "${MAIN_SCRIPT:="$0"}"
 
 for arg in "$@"; do
@@ -38,6 +40,8 @@ for arg in "$@"; do
     RUN_UPDATES=true
   elif [[ $arg == --no-cache ]]; then
     RUN_NO_CACHE=true
+  elif [[ $arg == --platform=* ]]; then
+    export OS_NAME="${arg#--platform=}"
   fi
 done
 
@@ -86,7 +90,7 @@ os_lib_format() {
     else
       echo "$lib_name.dll"
     fi
-  elif is_linux; then
+  elif is_linux || is_android; then
     if $is_static; then
       echo "lib$lib_name.a"
     else
@@ -531,8 +535,8 @@ dependency_version() {
 }
 
 is_windows() {
-  case "$(uname -s)" in
-    CYGWIN*|MINGW*|MSYS*)
+  case "$OS_NAME" in
+    cygwin*|mingw*|msys*|windows)
       return 0
       ;;
   esac
@@ -540,8 +544,8 @@ is_windows() {
 }
 
 is_linux() {
-  case "$(uname -s)" in
-    Linux)
+  case "$OS_NAME" in
+    linux)
       return 0
       ;;
   esac
@@ -549,8 +553,17 @@ is_linux() {
 }
 
 is_macos() {
-  case "$(uname -s)" in
-    Darwin)
+  case "$OS_NAME" in
+    darwin)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_android() {
+  case "$OS_NAME" in
+    android)
       return 0
       ;;
   esac
@@ -756,7 +769,7 @@ build_and_install() {
       cleanup_commands="${arg#--cleanup-commands=}"
     elif [[ "$arg" == --prefix=* || "$arg" == -DCMAKE_INSTALL_PREFIX=* ]];then
       build_dir="${arg#*=}"
-    elif [[ "$arg" =~ --(windows|linux|macos).*=.* ]]; then
+    elif [[ "$arg" =~ --(windows|linux|macos|android).*=.* ]]; then
       platforms="${arg%%=*}"
       platforms="${platforms#--}"
       IFS='-' read -r -a platform_list <<< "$platforms"
@@ -766,6 +779,7 @@ build_and_install() {
           windows) is_windows && platform_supported=true ;;
           linux) is_linux && platform_supported=true ;;
           macos) is_macos && platform_supported=true ;;
+          android) is_android && platform_supported=true ;;
         esac
       done
 
