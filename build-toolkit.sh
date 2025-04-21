@@ -756,6 +756,7 @@ build_and_install() {
   local new_args=()
   local executable_command=()
   local last_branch=""
+  local pl_args=""
   current_dir="$(pwd)"
 
   for arg in "$@"; do
@@ -784,8 +785,9 @@ build_and_install() {
       done
 
       if $platform_supported; then
-        read -r -a tmp <<< "${arg#--"$platforms"=}"
-        new_args+=("${tmp[@]}")
+        pl_args="${arg#--"$platforms"=}"
+        pl_args="${pl_args//\/ }"
+        eval "new_args+=($pl_args)"
       fi
     else
       new_args+=("$arg")
