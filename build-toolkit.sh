@@ -926,14 +926,21 @@ build_and_install() {
     if [[ -n "$dir_after_build" ]]; then
       cd "$dir_after_build" || exit 1
     fi
-    if [[ "$build_type" == "autogen" || "$build_type" == "autogen-static" || "$build_type" == "configure" || "$build_type" == "configure-static" || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
+    if [[ "$build_type" == autogen* || "$build_type" == configure* || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
       run make clean --ignore-errors=2
       save_headers run make -j"$(cpu_count)" --ignore-errors=2
       save_headers run make install
-    else
+    elif [[ "$build_type" == meson* || "$build_tool" == "Ninja" ]]; then
       run python -m ninja -C build -t clean
       save_headers run python -m ninja -C build -j"$(cpu_count)"
       save_headers run python -m ninja -C build install
+    elif [[ -n "$build_tool" ]]; then
+      run cmake --build . --target clean --config Release
+      save_headers run cmake --build . --config Release -j"$(cpu_count)"
+      save_headers run cmake --install . --config Release
+    else
+      echo "[error] Unknown build tool: $build_tool" >&2
+      exit 1
     fi
   fi
   if [ -n "$cleanup_commands" ]; then
