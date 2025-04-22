@@ -228,6 +228,9 @@ import() {
               exit 1
             fi
           fi
+          if $is_updatable && is_git_commit "$raw_key" "$value"; then
+            is_updatable=false
+          fi
           key=$(basename "$raw_key")
           key="$(echo "$key" | tr '[:lower:]' '[:upper:]')"
           key="${key//-/_}"
@@ -240,14 +243,13 @@ import() {
             echo "       overriding with : $value" >&2
             echo "       imported from   : $remote_source/$file_name" >&2
           fi
-          if [[ ! "$raw_key" =~ ^(gitlab|github)\.com/ && ! "$raw_key" =~ ^bitbucket\.org/ ]]; then
+          if ! is_valid_repo "$raw_key"; then
             echo "[error] Invalid import: $raw_key" >&2
-            echo "        not an accepted source (only \"gitlab.com\", \"github.com\" or \"bitbucket.org\" allowed)" >&2
+            echo "        invalid git repository in import declaration" >&2
             exit 1
           fi
           prefix=$(find_prefix_tag "$raw_key" "$value")
-          ret_code=$?
-          if [[ $ret_code -ne 0 ]]; then
+          if [[ $? -ne 0 ]]; then
             exit 1
           fi
           pkg_config_path="$(read_cache "lib" "$raw_key")"
@@ -330,58 +332,40 @@ update_dependencies() {
   done
 }
 
-git_api_request() {
-  local repo="$1"
-  local url_api
-  local page=1
+is_valid_repo() {
+  local repo="https://$1.git"
+  read_cache "is_valid" "$1" &>/dev/null
+  if [[ $? -eq 0 ]]; then
+    return 0
+  fi
+  if git ls-remote "$repo" &>/dev/null; then
+    write_cache "is_valid" "$1" "true"
+    return 0
+  fi
+  return 1
+}
 
-  git_loc="${repo/github.com\//}"
-  git_loc="${git_loc/gitlab.com\//}"
-  git_loc="${git_loc/bitbucket.org\//}"
-  headers=()
+git_list_tags() {
+  local repo="https://$1.git"
+  git ls-remote --tags "$repo" 2>/dev/null | \
+      awk -F'refs/tags/' '/refs\/tags\// {print $2}' | \
+      sed 's/\^{}//' | sort -u
+}
 
-  if [[ "$repo" =~ ^gitlab.com* ]]; then
-    base_url="https://gitlab.com/api/v4/projects/$(url_encode "$git_loc")/repository/tags?per_page=100&page="
-  elif [[ "$repo" =~ ^bitbucket.org.* ]]; then
-    base_url="https://api.bitbucket.org/2.0/repositories/${git_loc}/refs/tags?page="
-  else
-    base_url="https://api.github.com/repos/${git_loc}/tags?per_page=100&page="
-    [[ -n "$GITHUB_TOKEN" ]] && headers+=(-H "Authorization: token $GITHUB_TOKEN")
+is_git_commit() {
+  read_cache "is_commit" "$1:$2" &>/dev/null
+  if [[ $? -eq 0 ]]; then
+    return 0
   fi
 
-  while true; do
-    url_api="${base_url}${page}"
-    response=$(curl "${headers[@]}" -L -s -w "%{http_code}" "$url_api")
-    http_code="${response: -3}"
-    content="${response:0:${#response}-3}"
+  echo "$2" | grep -Eq '^[0-9a-fA-F]{7,40}$' || return 1
 
-    if [[ "$http_code" -ge 400 ]]; then
-      return 1
-    fi
-
-    echo "$content" | grep -o '"name":\s*"[^\"]*"' | perl -nle 'print $1 if /"name":\s*"([^"]+)"/'
-
-    if [[ "$repo" =~ ^gitlab.com* ]]; then
-      next_page=$(echo "$response" | grep -i "X-Next-Page" | awk '{print $2}')
-    elif [[ "$repo" =~ ^bitbucket.org* ]]; then
-      next_page=$(echo "$response" | grep -o '"next": *"[^"]*"' | sed -E 's/.*"next": *"([^"]+)".*/\1/')
-      if [[ -n "$next_page" ]]; then
-        next_page=1
-      fi
-    else
-      length=$(echo "$content" | tr -d '\n' | grep -o '{[^}]*}' | wc -l)
-      if [[ "$length" -eq 100 ]]; then
-        next_page=1
-      else
-        next_page=0
-      fi
-    fi
-
-    if [[ "$next_page" -eq 0 ]]; then
-      break
-    fi
-    page=$((page + 1))
-  done
+  if git ls-remote "https://$1.git" | awk '{print $1}' | grep -qx "$2"; then
+    write_cache "is_commit" "$1:$2" "true"
+    return 0
+  else
+    return 1
+  fi
 }
 
 write_cache() {
@@ -447,40 +431,45 @@ apply_separator() {
 find_prefix_tag() {
   local repo="$1"
   local base_version="$2"
+  local prefix=""
+  local separator=""
+  local tags=""
 
-  index_cache=$(read_cache "prefix" "$repo")
-  ret_code=$?
-  if [[ $ret_code -eq 0 ]]; then
+  index_cache=$(read_cache "prefix" "$repo:$base_version")
+  if [[ $? -eq 0 ]]; then
     echo "${index_cache%%;*}"
     return 0
   fi
+
   echo "[info] Importing $repo" >&2
 
-  tags=$(git_api_request "$repo")
-  prefix=$(retrieve_prefix "$tags" "$base_version")
-  ret_code=$?
-  if [[ $ret_code -ne 0 ]]; then
-    echo "[error] Failed to find prefix for $repo" >&2
-    return 1
+  if ! is_git_commit "$repo" "$base_version"; then
+     tags=$(git_list_tags "$repo")
+     prefix=$(retrieve_prefix "$tags" "$base_version")
+     if [[ $? -ne 0 ]]; then
+       echo "[error] Failed to find prefix for $repo" >&2
+       return 1
+     fi
+     separator=$(identify_separator "$tags" "$base_version")
   fi
-  separator=$(identify_separator "$tags" "$base_version")
 
-  write_cache "prefix" "$repo" "$prefix;$separator"
+
+  write_cache "prefix" "$repo:$base_version" "$prefix;$separator"
   echo "$prefix"
 }
 
 find_latest_version() {
   local repo="$1"
   local base_version="$2"
-  local void_prefix
-  local suffix
+  local void_prefix=""
+  local suffix=""
 
-  tags=$(git_api_request "$repo")
-  index_cache=$(read_cache "prefix" "$repo")
+  tags=$(git_list_tags "$repo")
+  index_cache=$(read_cache "prefix" "$repo:$base_version")
   if [[ -z "$index_cache" ]]; then
     prefix=$(retrieve_prefix "$tags" "$base_version")
     separator=$(identify_separator "$tags" "$base_version")
-    write_cache "prefix" "$repo" "$prefix;$separator"
+    write_cache "prefix" "$repo:$base_version" "$prefix;$separator"
   fi
   prefix="${index_cache%%;*}"
   separator="${index_cache#*;}"
@@ -754,8 +743,7 @@ build_and_install() {
     separator=$(read_cache "prefix" "$git_var")
     separator="${separator#*;}"
     version_var=$(apply_separator "$version_var" "$separator")
-    ret_code=$?
-    if [[ $ret_code -eq 1 ]]; then
+    if [[ $? -eq 1 ]]; then
       echo "[error] Failed to find prefix for $git_var" >&2
       exit 1
     fi
@@ -824,16 +812,29 @@ build_and_install() {
   cd "$DEFAULT_BUILD_FOLDER" || exit 1
 
   if [[ ! -d "$repo_name" ]]; then
-    run git clone "$repo_url" --branch "$branch" --depth 1
+    git init "$repo_name" &>/dev/null
+    cd "$repo_name" || exit 1
+    run git remote add origin "$repo_url"
+    if is_git_commit "$git_var" "$branch"; then
+      run git fetch origin "$branch" --depth=1
+    else
+      run git fetch origin tag "$branch" --depth=1
+    fi
+    run git checkout FETCH_HEAD
     write_cache "last_branch" "$git_var" "$branch"
+    cd .. || exit 1
   fi
 
   cd "$repo_name" || exit 1
 
   last_branch="$(read_cache "last_branch" "$git_var")"
   if [[ "$branch" != "$last_branch" ]]; then
-    run git fetch origin tag "$branch" --depth=1
-    run git checkout "$branch"
+    if is_git_commit "$git_var" "$branch"; then
+      run git fetch origin "$branch" --depth=1
+    else
+      run git fetch origin tag "$branch" --depth=1
+    fi
+    run git checkout FETCH_HEAD
     run git reset --hard
     run git clean -fdx
     write_cache "last_branch" "$git_var" "$branch"
