@@ -1088,6 +1088,30 @@ normalize_arch() {
   echo "$arch_output"
 }
 
+find_lib() {
+  local base_dir="$1"
+  local lib_name="$2"
+  local is_static="$3"
+  local lib_rgx=""
+  if [[ "$is_static" == "static" ]]; then
+    lib_rgx="(lib)?${lib_name#lib}\.(a|lib)"
+  else
+    lib_rgx="(lib)?${lib_name#lib}\.(so|dll|dylib)"
+  fi
+  for subdir in lib lib64; do
+    local lib_dir="$base_dir/$subdir"
+    if [[ -d "$lib_dir" ]]; then
+      find "$lib_dir" -maxdepth 1 \( -type f -o -type l \) \
+        | while read -r f; do
+            if [ -f "$f" ] && echo "$f" | grep -Ei "$lib_rgx" >/dev/null; then
+              echo "$f"
+              break
+            fi
+          done
+    fi
+  done
+}
+
 copy_libs() {
   local lib_name="$1"
   local dest_dir="$2"
@@ -1136,7 +1160,6 @@ copy_libs() {
     exit 1
   fi
 
-  local lib_dir="$base_path/lib"
   local include_dir="$base_path/include"
   headers=()
   cached_headers="$(read_cache "lib_include" "$git_var")"
@@ -1166,28 +1189,14 @@ copy_libs() {
   fi
 
   for lib in "${libs_list[@]}"; do
-    local lib_rgx
-    if [[ "$is_static" == "static" ]]; then
-      lib_rgx="(lib)?${lib#lib}\.(a|lib)"
-    else
-      lib_rgx="(lib)?${lib#lib}\.(so|dll|dylib)"
-    fi
-    found_file=$(
-      find "$lib_dir" -maxdepth 1 \( -type f -o -type l \) \
-      | while read -r f; do
-          if [ -f "$f" ] && echo "$f" | grep -Ei "$lib_rgx" >/dev/null; then
-            echo "$f"
-            break
-          fi
-        done
-    )
+    found_file="$(find_lib "$base_path" "$lib" "$is_static")"
     if [[ -n "$found_file" ]]; then
       real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
       echo "[info] Copying $is_static library $lib_file_output" >&2
       cp "$real_file" "$output_libs_dir/$lib_file_output"
     else
-      echo "[error] Library $(os_lib_format "$is_static" "$lib") not found in $lib_dir" >&2
+      echo "[error] Library $(os_lib_format "$is_static" "$lib") not found in $base_path" >&2
       exit 1
     fi
   done
@@ -1230,12 +1239,11 @@ convert_to_static() {
   cd "Implib.so" || exit 1
   for lib in "${libs_list[@]}"; do
     local lib_file
-    lib_file=$(os_lib_format "dynamic" "$lib")
-    echo "[info] Converting $lib_file to static" >&2
-    found_file=$(find "$lib_dir" -maxdepth 1 -iname "$lib_file" \( -type f -o -type l \) -exec test -f {} \; -print -quit)
+    found_file="$(find_lib "$base_path" "$lib" "dynamic")"
     if [[ -n "$found_file" ]]; then
       real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "static" "$(basename "$found_file")")
+      echo "[info] Converting $lib_file_output to static" >&2
       python implib-gen.py -q -o build "$real_file" || exit 1
       cd build || exit 1
       init_file="$(basename "$real_file").init"
@@ -1244,7 +1252,7 @@ convert_to_static() {
       ar rcs "$lib_file_output" "$init_file.o" "$tramp_file.o"
       mv "$lib_file_output" "$lib_dir/$lib_file_output"
     else
-      echo "[error] Library $lib_file not found in $lib_dir" >&2
+      echo "[error] Library $(os_lib_format "dynamic" "$lib") not found in $lib_dir" >&2
       exit 1
     fi
     cd .. || exit 1
