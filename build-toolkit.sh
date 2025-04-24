@@ -79,10 +79,10 @@ os_lib_format() {
   esac
 
   lib_name="${2#lib}"
-  lib_name="${lib_name%.a}"
-  lib_name="${lib_name%.dylib}"
-  lib_name="${lib_name%.dll}"
-  lib_name="${lib_name%.so}"
+  lib_name="${lib_name%.a*}"
+  lib_name="${lib_name%.dylib*}"
+  lib_name="${lib_name%.dll*}"
+  lib_name="${lib_name%.so*}"
 
   if is_windows; then
     if $is_static; then
@@ -1191,10 +1191,9 @@ copy_libs() {
   for lib in "${libs_list[@]}"; do
     found_file="$(find_lib "$base_path" "$lib" "$is_static")"
     if [[ -n "$found_file" ]]; then
-      real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "$is_static" "$(basename "$found_file")")
       echo "[info] Copying $is_static library $lib_file_output" >&2
-      cp "$real_file" "$output_libs_dir/$lib_file_output"
+      cp "$found_file" "$output_libs_dir/$lib_file_output"
     else
       echo "[error] Library $(os_lib_format "$is_static" "$lib") not found in $base_path" >&2
       exit 1
@@ -1226,8 +1225,6 @@ convert_to_static() {
     exit 1
   fi
   local curr_dir;
-  local init_file;
-  local tramp_file;
   curr_dir="$(pwd)"
   local lib_dir="$base_path/lib"
 
@@ -1238,16 +1235,17 @@ convert_to_static() {
   fi
   cd "Implib.so" || exit 1
   for lib in "${libs_list[@]}"; do
-    local lib_file
+    local lib_file_output;
+    local init_file;
+    local tramp_file;
     found_file="$(find_lib "$base_path" "$lib" "dynamic")"
     if [[ -n "$found_file" ]]; then
-      real_file=$(resolve_realpath "$found_file")
       lib_file_output=$(os_lib_format "static" "$(basename "$found_file")")
       echo "[info] Converting $lib_file_output to static" >&2
-      python implib-gen.py -q -o build "$real_file" || exit 1
+      python implib-gen.py -q -o build "$found_file" || exit 1
       cd build || exit 1
-      init_file="$(basename "$real_file").init"
-      tramp_file="$(basename "$real_file").tramp"
+      init_file="$(basename "$found_file").init"
+      tramp_file="$(basename "$found_file").tramp"
       gcc -fPIC -c "$init_file.c" "$tramp_file.S"
       ar rcs "$lib_file_output" "$init_file.o" "$tramp_file.o"
       mv "$lib_file_output" "$lib_dir/$lib_file_output"
@@ -1322,28 +1320,6 @@ process_args() {
  else
    return 1
  fi
-}
-
-resolve_realpath() {
- local path="$1"
-
- if [ ! -L "$path" ]; then
-   echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
-   return
- fi
-
- while [ -L "$path" ]; do
-   if [[ "$path" != /* ]]; then
-     path="$(dirname "$1")/$path"
-   fi
-   path_target=$(find "$(dirname "$path")" -maxdepth 1 -name "$(basename "$path")" -exec readlink -f {} \;)
-   if [[ "$path_target" != /* ]]; then
-     path="$(dirname "$path")/$path_target"
-   else
-     path="$path_target"
-   fi
- done
- echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
 }
 
 android_tool() {
