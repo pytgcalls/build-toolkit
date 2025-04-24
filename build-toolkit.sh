@@ -740,7 +740,7 @@ build_and_install() {
     local tag_prefix="LIB_${lib_name}_PREFIX"
     local version_var="LIB_${lib_name}_VERSION"
     version_var="${!version_var}"
-    separator=$(read_cache "prefix" "$git_var")
+    separator=$(read_cache "prefix" "$git_var:$version_var")
     separator="${separator#*;}"
     version_var=$(apply_separator "$version_var" "$separator")
     if [[ $? -eq 1 ]]; then
