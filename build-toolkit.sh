@@ -333,12 +333,11 @@ update_dependencies() {
 }
 
 is_valid_repo() {
-  local repo="https://$1.git"
   read_cache "is_valid" "$1" &>/dev/null
   if [[ $? -eq 0 ]]; then
     return 0
   fi
-  if git ls-remote "$repo" &>/dev/null; then
+  if git ls-remote "$(format_git_url "$1")" &>/dev/null; then
     write_cache "is_valid" "$1" "true"
     return 0
   fi
@@ -346,8 +345,7 @@ is_valid_repo() {
 }
 
 git_list_tags() {
-  local repo="https://$1.git"
-  git ls-remote --tags "$repo" 2>/dev/null | \
+  git ls-remote --tags "$(format_git_url "$1")" 2>/dev/null | \
       awk -F'refs/tags/' '/refs\/tags\// {print $2}' | \
       sed 's/\^{}//' | sort -u
 }
@@ -360,12 +358,28 @@ is_git_commit() {
 
   echo "$2" | grep -Eq '^[0-9a-fA-F]{7,40}$' || return 1
 
-  if git ls-remote "https://$1.git" | awk '{print $1}' | grep -qx "$2"; then
+  if git ls-remote "$(format_git_url "$1")" | awk '{print $1}' | grep -qx "$2"; then
     write_cache "is_commit" "$1:$2" "true"
     return 0
   else
     return 1
   fi
+}
+
+format_git_url() {
+  protocol="$(read_cache "git_protocol" "$1")"
+  if [[ $? -eq 0 ]]; then
+    echo "$protocol://$1.git"
+    return 0
+  fi
+  for protocol in https http git; do
+    timeout 10 git ls-remote "$protocol://$1.git" > /dev/null 2>&1
+    if [[ $? -eq 0 ]]; then
+      write_cache "git_protocol" "$1" "$protocol"
+      echo "$protocol://$1.git"
+      return 0
+    fi
+  done
 }
 
 write_cache() {
@@ -747,7 +761,7 @@ build_and_install() {
       echo "[error] Failed to find prefix for $git_var" >&2
       exit 1
     fi
-    repo_url="https://$git_var.git"
+    repo_url="$(format_git_url "$git_var")"
     if [[ -z "$git_var" ]]; then
       echo "[error] No dependency found for ${1%%/*}" >&2
       exit 1
