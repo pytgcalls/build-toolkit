@@ -386,17 +386,24 @@ write_cache() {
   local index_name="$1"
   local repo="$2"
   local value="$3"
-  local rgx=""
-  if [[ -f "$CACHE_FILE" ]] && grep -q "^$index_name:$repo=" "$CACHE_FILE"; then
-    rgx="s|^$index_name:$repo=.*|$index_name:$repo=$value|"
-    if is_macos; then
-      sed -i "" "$rgx" "$CACHE_FILE"
-    else
-      sed -i "$rgx" "$CACHE_FILE"
-    fi
-  else
-    echo "$index_name:$repo=$value" >> "$CACHE_FILE"
+  local key="$index_name:$repo"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  local found=0
+  if [[ -f "$CACHE_FILE" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" == "$key="* ]]; then
+        echo "$key=$value" >> "$tmp_file"
+        found=1
+      else
+        echo "$line" >> "$tmp_file"
+      fi
+    done < "$CACHE_FILE"
   fi
+  if [[ "$found" -eq 0 ]]; then
+    echo "$key=$value" >> "$tmp_file"
+  fi
+  mv "$tmp_file" "$CACHE_FILE"
 }
 
 read_cache() {
