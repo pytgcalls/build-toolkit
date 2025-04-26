@@ -977,7 +977,7 @@ build_and_install() {
   merged_commands=("${executable_command[@]}" "${new_args[@]}")
 
   if [[ "$build_type" != "clone" ]]; then
-  echo "[info] Running $build_type with options: $(quote_args "${new_args[@]}")" >&2
+    echo "[info] Running $build_type with options: $(quote_args "${new_args[@]}")" >&2
   fi
   case "$build_type" in
     configure|configure-static)
@@ -1042,7 +1042,11 @@ save_headers() {
     local new_headers=()
     while IFS= read -r line; do
       new_headers+=("$line")
-    done < <(find "$build_dir/include" -type f \( -name "*.h" -o -name "*.hpp" \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
+    done < <(find "$build_dir/include" -type f \( \
+      -name "*.h"    -o -name "*.cuh"  -o -name "*.hh"  -o -name "*.hp"  -o \
+      -name "*.hpp"  -o -name "*.hxx"  -o -name "*.icc" -o -name "*.inl" -o \
+      -name "*.ino"  -o -name "*.ipp"  -o -name "*.tcc" -o -name "*.tpp" \
+      \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
     old_cache=$(read_cache "lib_include" "$git_var")
     IFS=';' read -r -a old_headers <<< "$old_cache"
     all_headers=("${old_headers[@]}" "${new_headers[@]}")
