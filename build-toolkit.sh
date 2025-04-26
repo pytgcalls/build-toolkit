@@ -948,6 +948,22 @@ build_and_install() {
       fi
       new_args+=("-DCMAKE_INSTALL_PREFIX=$build_dir")
       ;;
+    b2|b2-static)
+      executable_command=("./b2" "install" "-d+0")
+      new_args+=("--prefix=$build_dir")
+      if $is_static; then
+        new_args+=("link=static" "runtime-link=static")
+        cxx_flags_tmp=$(process_args get "cxxflags" "${new_args[@]}")
+        tmp_args=()
+        while IFS= read -r line; do
+          tmp_args+=("$line")
+        done < <(process_args filter "cxxflags" "${new_args[@]}")
+        new_args=("${tmp_args[@]}" "cxxflags=$cxx_flags_tmp -fPIC")
+      fi
+      new_args+=("--layout=system")
+      new_args+=("variant=release")
+      skip_build=true
+      ;;
     make)
       ;;
     clone)
@@ -969,6 +985,16 @@ build_and_install() {
       ;;
     cmake|cmake-static)
       rm -rf "$dir_after_build"
+      ;;
+    b2|b2-static)
+      if [[ ! -f "b2" && ! -f "b2.exe" ]]; then
+        if is_windows; then
+          run bootstrap.bat
+        else
+          run ./bootstrap.sh
+        fi
+      fi
+      rm -rf "$build_dir"
       ;;
   esac
   write_cache "lib_include" "$git_var" ";"
