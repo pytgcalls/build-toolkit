@@ -351,19 +351,10 @@ git_list_tags() {
 }
 
 is_git_commit() {
-  read_cache "is_commit" "$1:$2" &>/dev/null
-  if [[ $? -eq 0 ]]; then
+  if echo "$2" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
     return 0
   fi
-
-  echo "$2" | grep -Eq '^[0-9a-fA-F]{7,40}$' || return 1
-
-  if git ls-remote "$(format_git_url "$1")" | awk '{print $1}' | grep -qx "$2"; then
-    write_cache "is_commit" "$1:$2" "true"
-    return 0
-  else
-    return 1
-  fi
+  return 1
 }
 
 format_git_url() {
