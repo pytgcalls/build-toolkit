@@ -1046,6 +1046,9 @@ normalize_arch() {
         arch|ndk|ndk-cpu|fancy)
           arch_output="x86_64"
         ;;
+        short)
+          arch_output="x86"
+        ;;
       esac
     ;;
     arm64|aarch64|armv8-a|arm64-v8a)
@@ -1059,6 +1062,9 @@ normalize_arch() {
         cpu)
           arch_output="armv8-a"
         ;;
+        short)
+          arch_output="arm"
+        ;;
       esac
     ;;
     armhf|armv7l|armv7a|arm|armv7-a)
@@ -1066,7 +1072,7 @@ normalize_arch() {
         fancy)
           arch_output="armeabi-v7a"
         ;;
-        arch|ndk-cpu)
+        arch|ndk-cpu|short)
           arch_output="arm"
         ;;
         cpu)
@@ -1079,7 +1085,7 @@ normalize_arch() {
     ;;
     x86|i386|i686)
       case "$style" in
-        arch|fancy)
+        arch|fancy|short)
           arch_output="x86"
         ;;
         cpu|ndk|ndk-cpu)
