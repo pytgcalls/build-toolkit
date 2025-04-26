@@ -364,7 +364,7 @@ format_git_url() {
     return 0
   fi
   for protocol in https http git; do
-    timeout 10 git ls-remote "$protocol://$1.git" > /dev/null 2>&1
+    git ls-remote "$protocol://$1.git" > /dev/null 2>&1
     if [[ $? -eq 0 ]]; then
       write_cache "git_protocol" "$1" "$protocol"
       echo "$protocol://$1.git"
