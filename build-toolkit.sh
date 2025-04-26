@@ -981,7 +981,7 @@ build_and_install() {
       executable_command=("./b2" "install" "-d+0")
       new_args+=("--prefix=$build_dir")
       if $is_static; then
-        new_args+=("link=static" "runtime-link=static")
+        new_args+=("link=static")
         cxx_flags_tmp=$(process_args get "cxxflags" "${new_args[@]}")
         tmp_args=()
         while IFS= read -r line; do
