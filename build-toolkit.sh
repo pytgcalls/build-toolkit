@@ -1018,7 +1018,7 @@ build_and_install() {
     b2|b2-static)
       if [[ ! -f "b2" && ! -f "b2.exe" ]]; then
         if is_windows; then
-          run bootstrap.bat
+          run ./bootstrap.bat
         else
           run ./bootstrap.sh
         fi
