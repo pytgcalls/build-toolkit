@@ -1199,6 +1199,33 @@ find_lib() {
   done
 }
 
+chunk_files() {
+  local dest_include_dir="$dest_dir/include/$last_folder"
+  mkdir -p "$dest_include_dir"
+
+  local current_chunk=()
+  local current_length=0
+
+  for f in "${current_files[@]}"; do
+    local relative_file="$include_dir/$f"
+    local new_length=$(( current_length + ${#relative_file} + 1 ))
+
+    if (( new_length > max_cmd_length && ${#current_chunk[@]} > 0 )); then
+      cp "${current_chunk[@]}" "$dest_include_dir"
+      current_chunk=()
+      current_length=0
+    fi
+
+    echo "[info] Copying header $f" >&2
+    current_chunk+=("$include_dir/$f")
+    current_length=$(( current_length + ${#relative_file} + 1 ))
+  done
+
+  if (( ${#current_chunk[@]} > 0 )); then
+    cp "${current_chunk[@]}" "$dest_include_dir"
+  fi
+}
+
 copy_libs() {
   local lib_name="$1"
   local dest_dir="$2"
@@ -1267,11 +1294,41 @@ copy_libs() {
   mkdir -p "$output_libs_dir"
 
   if [[ -n "${headers[*]}" ]]; then
+    local folder_list=()
+    local max_cmd_length;
+    local last_folder=""
+    local current_files=()
+    max_cmd_length=$(getconf ARG_MAX)
+
     for header in "${headers[@]}"; do
       lib_parent="${header//$include_dir\//}"
-      echo "[info] Copying header $lib_parent" >&2
-      mkdir -p "$(dirname "$dest_dir/include/$lib_parent")"
-      cp "$include_dir/$lib_parent" "$dest_dir/include/$lib_parent"
+      folder="${lib_parent%/*}"
+      folder_list+=("$folder|$lib_parent")
+    done
+
+    sorted_list=()
+    while IFS= read -r line; do
+      sorted_list+=("$line")
+    done < <(printf '%s\n' "${folder_list[@]}" | sort)
+
+    n_entries=${#sorted_list[@]}
+    i=0
+    for entry in "${sorted_list[@]}"; do
+      folder="${entry%%|*}"
+      file="${entry#*|}"
+
+      if [[ "$folder" != "$last_folder" && -n "$last_folder" ]]; then
+        chunk_files
+        current_files=()
+      fi
+
+      current_files+=("$file")
+      last_folder="$folder"
+
+      (( i++ ))
+      if (( i == n_entries )); then
+        chunk_files
+      fi
     done
   fi
 
