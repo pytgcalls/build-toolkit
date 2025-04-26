@@ -775,6 +775,7 @@ build_and_install() {
   local update_submodules=false
   local skip_build=false
   local setup_commands=""
+  local pre_build_commands=""
   local cleanup_commands=""
   local build_dir=""
   local build_tool=""
@@ -818,6 +819,8 @@ build_and_install() {
       skip_build=true
     elif [[ "$arg" == --setup-commands* ]]; then
       setup_commands="${arg#--setup-commands=}"
+    elif [[ "$arg" == --pre-build-commands* ]]; then
+      pre_build_commands="${arg#--pre-build-commands=}"
     elif [[ "$arg" == --cleanup-commands* ]]; then
       cleanup_commands="${arg#--cleanup-commands=}"
     elif [[ "$arg" == --prefix=* || "$arg" == -DCMAKE_INSTALL_PREFIX=* ]];then
@@ -1024,6 +1027,11 @@ build_and_install() {
       ;;
   esac
   write_cache "lib_include" "$git_var" ";"
+  if [ -n "$pre_build_commands" ]; then
+      local pre_build_commands_array
+      eval "pre_build_commands_array=($pre_build_commands)"
+      run "${pre_build_commands_array[@]}"
+  fi
   if [[ -n "${merged_commands[*]}" ]]; then
     save_headers run "${merged_commands[@]}"
   fi
