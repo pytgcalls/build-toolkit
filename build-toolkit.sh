@@ -950,6 +950,9 @@ build_and_install() {
       ;;
     make)
       ;;
+    clone)
+      skip_build=true
+      ;;
     *)
       echo "[error] Unknown build type: $build_type" >&2
       exit 1
@@ -957,7 +960,9 @@ build_and_install() {
   esac
   merged_commands=("${executable_command[@]}" "${new_args[@]}")
 
+  if [[ "$build_type" != "clone" ]]; then
   echo "[info] Running $build_type with options: $(quote_args "${new_args[@]}")" >&2
+  fi
   case "$build_type" in
     configure|configure-static)
       configure_autogen
