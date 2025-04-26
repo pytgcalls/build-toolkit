@@ -780,12 +780,38 @@ build_and_install() {
   local build_tool=""
   local dir_after_build=""
   local new_args=()
+  local expanded_args=()
   local executable_command=()
   local last_branch=""
   local pl_args=""
   current_dir="$(pwd)"
 
   for arg in "$@"; do
+    if [[ "$arg" =~ --(windows|linux|macos|android).*=.* ]]; then
+      platforms="${arg%%=*}"
+      platforms="${platforms#--}"
+      IFS='-' read -r -a platform_list <<< "$platforms"
+      platform_supported=false
+      for platform in "${platform_list[@]}"; do
+        case "$platform" in
+          windows) is_windows && platform_supported=true ;;
+          linux) is_linux && platform_supported=true ;;
+          macos) is_macos && platform_supported=true ;;
+          android) is_android && platform_supported=true ;;
+        esac
+      done
+
+      if $platform_supported; then
+        pl_args="${arg#--"$platforms"=}"
+        pl_args="${pl_args//\/ }"
+        eval "expanded_args+=($pl_args)"
+      fi
+    else
+      expanded_args+=("$arg")
+    fi
+  done
+
+  for arg in "${expanded_args[@]}"; do
     if [[ "$arg" == "--update-submodules" ]]; then
       update_submodules=true
     elif [[ "$arg" == "--skip-build" ]]; then
