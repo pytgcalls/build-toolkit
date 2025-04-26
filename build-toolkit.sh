@@ -978,7 +978,7 @@ build_and_install() {
       new_args+=("-DCMAKE_INSTALL_PREFIX=$build_dir")
       ;;
     b2|b2-static)
-      executable_command=("./b2" "install" "-d+0")
+      executable_command=("./b2" "install" "-d+0" "-j$(cpu_count)")
       new_args+=("--prefix=$build_dir")
       if $is_static; then
         new_args+=("link=static")
