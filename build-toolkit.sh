@@ -1339,8 +1339,18 @@ copy_libs() {
 
 convert_to_static() {
   local lib_name="$1"
+  local libs_list=()
+  local compiler="gcc"
+  
   shift 1
-  local libs_list=("$@")
+  for arg in "$@"; do
+    if [[ "$arg" == --compiler* ]]; then
+      compiler="${arg#--compiler=}"
+    else
+      libs_list+=("$arg")
+    fi
+  done
+
   if [[ ${#libs_list[@]} -eq 0 ]]; then
     libs_list=(
       "$lib_name"
@@ -1382,7 +1392,7 @@ convert_to_static() {
       cd build || exit 1
       init_file="$(basename "$found_file").init"
       tramp_file="$(basename "$found_file").tramp"
-      gcc -fPIC -c "$init_file.c" "$tramp_file.S"
+      "$compiler" -fPIC -c "$init_file.c" "$tramp_file.S"
       ar rcs "$lib_file_output" "$init_file.o" "$tramp_file.o"
       mv "$lib_file_output" "$lib_dir/$lib_file_output"
     else
