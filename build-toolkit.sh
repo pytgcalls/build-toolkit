@@ -83,6 +83,7 @@ os_lib_format() {
   lib_name="${lib_name%.dylib*}"
   lib_name="${lib_name%.dll*}"
   lib_name="${lib_name%.so*}"
+  lib_name="${lib_name%.lib*}"
 
   if is_windows; then
     if $is_static; then
