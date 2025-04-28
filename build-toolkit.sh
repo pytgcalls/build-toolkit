@@ -1229,29 +1229,21 @@ chunk_files() {
 copy_libs() {
   local lib_name="$1"
   local dest_dir="$2"
-  local arch_name="$3"
-  if [[ -n "$arch_name" ]]; then
-    case "$arch_name" in
-      x86_64|x86-64|amd64|arm64|aarch64|armv8-a|arm64-v8a|armhf|armv7l|armv7a|arm|armv7-a|x86|i386|i686)
-        arch_name="$(normalize_arch "$arch_name" "fancy")"
-        ;;
-      default)
-        arch_name=""
-        shift 1
-        ;;
-      *)
-        arch_name=""
-        ;;
-    esac
-    if [[ -z "$arch_name" ]]; then
-      shift 2
+  local arch_name
+  local libs_list=()
+
+  shift 2
+  for arg in "$@"; do
+    if [[ "$arg" == --arch* ]]; then
+      tmp_arch="${arg#--arch=}"
+      if [[ "$tmp_arch" != "default" ]]; then
+        arch_name="$(normalize_arch "$tmp_arch" "fancy")"
+      fi
     else
-      shift 3
+      libs_list+=("$arg")
     fi
-  else
-    shift 2
-  fi
-  local libs_list=("$@")
+  done
+
   if [[ ${#libs_list[@]} -eq 0 ]]; then
     libs_list=(
       "$lib_name"
