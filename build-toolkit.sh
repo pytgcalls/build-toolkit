@@ -35,6 +35,7 @@ append_env_path "PKG_CONFIG_PATH" /usr/lib/pkgconfig
 append_env_path "CFLAGS" "-I/usr/include"
 append_env_path "CXXFLAGS" "-I/usr/include"
 append_env_path "LDFLAGS" "-L/usr/lib"
+append_env_path "LD_LIBRARY_PATH" "/usr/lib"
 export ACLOCAL_PATH=/usr/share/aclocal
 
 RUN_UPDATES=false
@@ -266,6 +267,7 @@ import() {
             append_env_path "CFLAGS" "-I$pkg_config_path/include"
             append_env_path "CXXFLAGS" "-I$build_dir/include"
             append_env_path "LDFLAGS" "-L$pkg_config_path/lib"
+            append_env_path "LD_LIBRARY_PATH" "$pkg_config_path/lib"
           fi
           export "$version_var=$value"
           export "$source_var=$remote_source/$file_name"
@@ -1078,6 +1080,7 @@ build_and_install() {
   append_env_path "CFLAGS" "-I$build_dir/include"
   append_env_path "CXXFLAGS" "-I$build_dir/include"
   append_env_path "LDFLAGS" "-L$build_dir/lib"
+  append_env_path "LD_LIBRARY_PATH" "$build_dir/lib"
 }
 
 save_headers() {
