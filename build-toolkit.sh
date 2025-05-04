@@ -21,21 +21,30 @@ append_env_path() {
   local env_var="$1"
   local new_path="$2"
   local divider=":"
-  if [[ "$new_path" == -* ]]; then
-    divider=" "
-  fi
+  local current_value="${!env_var}"
+  [[ "$new_path" == -* ]] && divider=" "
   if [[ "$divider${!env_var}$divider" != *"$divider$new_path$divider"* ]]; then
-    export "$env_var=${!env_var}$divider$new_path"
+    if [[ -z "$current_value" ]]; then
+      export "$env_var=$new_path"
+    else
+      export "$env_var=${current_value}${divider}${new_path}"
+    fi
   fi
 }
 
-append_env_path "PKG_CONFIG_PATH" /usr/local/lib/pkgconfig
-append_env_path "PKG_CONFIG_PATH" /usr/local/share/pkgconfig
-append_env_path "PKG_CONFIG_PATH" /usr/lib/pkgconfig
-append_env_path "CFLAGS" "-I/usr/include"
-append_env_path "CXXFLAGS" "-I/usr/include"
-append_env_path "LDFLAGS" "-L/usr/lib"
-append_env_path "LD_LIBRARY_PATH" "/usr/lib"
+append_library() {
+  local out_path="$1"
+  append_env_path "PKG_CONFIG_PATH" "$out_path/lib/pkgconfig"
+  append_env_path "PKG_CONFIG_PATH" "$out_path/share/pkgconfig"
+  append_env_path "CFLAGS" "-I$out_path/include"
+  append_env_path "CXXFLAGS" "-I$out_path/include"
+  append_env_path "LDFLAGS" "-L$out_path/lib"
+  append_env_path "LIBRARY_PATH" "$out_path/lib"
+  append_env_path "LD_LIBRARY_PATH" "$out_path/lib"
+}
+
+append_library "/usr"
+append_library "/usr/local"
 export ACLOCAL_PATH=/usr/share/aclocal
 
 RUN_UPDATES=false
@@ -261,13 +270,9 @@ import() {
           if [[ $? -ne 0 ]]; then
             exit 1
           fi
-          pkg_config_path="$(read_cache "lib" "$raw_key")"
-          if [[ -n "$pkg_config_path" ]]; then
-            append_env_path "PKG_CONFIG_PATH" "$pkg_config_path/lib/pkgconfig"
-            append_env_path "CFLAGS" "-I$pkg_config_path/include"
-            append_env_path "CXXFLAGS" "-I$build_dir/include"
-            append_env_path "LDFLAGS" "-L$pkg_config_path/lib"
-            append_env_path "LD_LIBRARY_PATH" "$pkg_config_path/lib"
+          lib_path="$(read_cache "lib" "$raw_key")"
+          if [[ -n "$lib_path" ]]; then
+            append_library "$lib_path"
           fi
           export "$version_var=$value"
           export "$source_var=$remote_source/$file_name"
@@ -1076,11 +1081,7 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
-  append_env_path "PKG_CONFIG_PATH" "$build_dir/lib/pkgconfig"
-  append_env_path "CFLAGS" "-I$build_dir/include"
-  append_env_path "CXXFLAGS" "-I$build_dir/include"
-  append_env_path "LDFLAGS" "-L$build_dir/lib"
-  append_env_path "LD_LIBRARY_PATH" "$build_dir/lib"
+  append_library "$build_dir"
 }
 
 save_headers() {
@@ -1358,7 +1359,7 @@ convert_to_static() {
   local lib_name="$1"
   local libs_list=()
   local compiler="gcc"
-  
+
   shift 1
   for arg in "$@"; do
     if [[ "$arg" == --compiler* ]]; then
