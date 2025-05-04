@@ -17,16 +17,24 @@ else
   fi
 fi
 
-append_pkg_config_path() {
-  local new_path="$1"
-  if [[ ":$PKG_CONFIG_PATH:" != *":$new_path:"* ]]; then
-    export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$new_path"
+append_env_path() {
+  local env_var="$1"
+  local new_path="$2"
+  local divider=":"
+  if [[ "$new_path" == -* ]]; then
+    divider=" "
+  fi
+  if [[ "$divider${!env_var}$divider" != *"$divider$new_path$divider"* ]]; then
+    export "$env_var=${!env_var}$divider$new_path"
   fi
 }
 
-append_pkg_config_path /usr/local/lib/pkgconfig
-append_pkg_config_path /usr/local/share/pkgconfig
-append_pkg_config_path /usr/lib/pkgconfig
+append_env_path "PKG_CONFIG_PATH" /usr/local/lib/pkgconfig
+append_env_path "PKG_CONFIG_PATH" /usr/local/share/pkgconfig
+append_env_path "PKG_CONFIG_PATH" /usr/lib/pkgconfig
+append_env_path "CFLAGS" "-I/usr/include"
+append_env_path "CXXFLAGS" "-I/usr/include"
+append_env_path "LDFLAGS" "-L/usr/lib"
 export ACLOCAL_PATH=/usr/share/aclocal
 
 RUN_UPDATES=false
@@ -83,7 +91,6 @@ os_lib_format() {
   lib_name="${lib_name%.dylib*}"
   lib_name="${lib_name%.dll*}"
   lib_name="${lib_name%.so*}"
-  lib_name="${lib_name%.lib*}"
 
   if is_windows; then
     if $is_static; then
@@ -255,7 +262,10 @@ import() {
           fi
           pkg_config_path="$(read_cache "lib" "$raw_key")"
           if [[ -n "$pkg_config_path" ]]; then
-            append_pkg_config_path "$pkg_config_path/lib/pkgconfig"
+            append_env_path "PKG_CONFIG_PATH" "$pkg_config_path/lib/pkgconfig"
+            append_env_path "CFLAGS" "-I$pkg_config_path/include"
+            append_env_path "CXXFLAGS" "-I$build_dir/include"
+            append_env_path "LDFLAGS" "-L$pkg_config_path/lib"
           fi
           export "$version_var=$value"
           export "$source_var=$remote_source/$file_name"
@@ -1064,7 +1074,10 @@ build_and_install() {
       run "${cleanup_commands_array[@]}"
   fi
   cd "$current_dir" || exit 1
-  append_pkg_config_path "$build_dir/lib/pkgconfig"
+  append_env_path "PKG_CONFIG_PATH" "$build_dir/lib/pkgconfig"
+  append_env_path "CFLAGS" "-I$build_dir/include"
+  append_env_path "CXXFLAGS" "-I$build_dir/include"
+  append_env_path "LDFLAGS" "-L$build_dir/lib"
 }
 
 save_headers() {
