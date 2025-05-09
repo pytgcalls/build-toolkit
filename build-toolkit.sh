@@ -43,14 +43,12 @@ append_library() {
   append_env_path "LD_LIBRARY_PATH" "$out_path/lib"
 }
 
-append_library "/usr"
-append_library "/usr/local"
 export ACLOCAL_PATH=/usr/share/aclocal
 
 RUN_UPDATES=false
 RUN_NO_CACHE=false
 export OS_NAME
-OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
+OS_NAME="$(uname -s)"
 : "${MAIN_SCRIPT:="$0"}"
 
 for arg in "$@"; do
@@ -62,6 +60,13 @@ for arg in "$@"; do
     export OS_NAME="${arg#--platform=}"
   fi
 done
+
+OS_NAME="$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')"
+
+if [[ "$OS_NAME" != "android" ]]; then
+  append_library "/usr"
+  append_library "/usr/local"
+fi
 
 export BUILD_KIT_DIR
 BUILD_KIT_DIR="$(pwd)/.buildkit"
