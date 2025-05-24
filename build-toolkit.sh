@@ -1252,6 +1252,7 @@ chunk_files() {
 copy_libs() {
   local lib_name="$1"
   local dest_dir="$2"
+  local is_headers_only=false
   local arch_name
   local libs_list=()
 
@@ -1262,12 +1263,14 @@ copy_libs() {
       if [[ "$tmp_arch" != "default" ]]; then
         arch_name="$(normalize_arch "$tmp_arch" "fancy")"
       fi
+    elif [[ "$arg" == --only-headers ]]; then
+      is_headers_only=true
     else
       libs_list+=("$arg")
     fi
   done
 
-  if [[ ${#libs_list[@]} -eq 0 ]]; then
+  if [[ ${#libs_list[@]} -eq 0 ]] && ! $is_headers_only; then
     libs_list=(
       "$lib_name"
     )
