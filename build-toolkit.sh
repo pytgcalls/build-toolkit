@@ -104,6 +104,7 @@ os_lib_format() {
   lib_name="${2#lib}"
   lib_name="${lib_name%.a*}"
   lib_name="${lib_name%.dylib*}"
+  lib_name="${lib_name%.lib*}"
   lib_name="${lib_name%.dll*}"
   lib_name="${lib_name%.so*}"
 
