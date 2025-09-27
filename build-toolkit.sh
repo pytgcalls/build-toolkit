@@ -1335,6 +1335,9 @@ copy_libs() {
     for entry in "${sorted_list[@]}"; do
       folder="${entry%%|*}"
       file="${entry#*|}"
+      if [[ "$folder" == "$file" ]]; then
+        folder=""
+      fi
 
       if [[ "$folder" != "$last_folder" && -n "$last_folder" ]]; then
         chunk_files
