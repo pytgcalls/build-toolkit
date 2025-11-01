@@ -437,7 +437,7 @@ read_cache() {
 retrieve_prefix() {
   local tags="$1"
   local base_version="$2"
-  matching_tags=$(echo "$tags" | grep "$base_version" | head -n 1)
+  matching_tags=$(echo "$tags" | grep "${base_version//./\\.}" | head -n 1)
   if [[ -z "$matching_tags" ]]; then
     return 1
   fi
@@ -447,7 +447,7 @@ retrieve_prefix() {
 identify_separator() {
   local tags="$1"
   local base_version="$2"
-  matching_tags=$(echo "$tags" | grep "$base_version" | head -n 1)
+  matching_tags=$(echo "$tags" | grep "${base_version//./\\.}" | head -n 1)
   if [[ -z "$matching_tags" ]]; then
     return 1
   fi
