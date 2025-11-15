@@ -742,6 +742,16 @@ require() {
         ANDROID_PREBUILT="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
       fi
       ;;
+    clang-*)
+      local clang_version="${1#clang-}"
+      if [[ -z "$clang_version" ]]; then
+        echo "[error] No clang version specified" >&2
+        exit 1
+      fi
+      install_clang "$clang_version"
+      export CLANG_BIN="$DEFAULT_TOOLS_FOLDER/clang-$clang_version/bin"
+      export PATH="$CLANG_BIN:$PATH"
+      ;;
     *)
       echo "[error] Unknown requirement: $1" >&2
       exit 1
@@ -1545,4 +1555,78 @@ android_tool() {
     exit 1
     ;;
   esac
+}
+
+install_clang() {
+  local clang_version="$1"
+  local clang_dir="$DEFAULT_TOOLS_FOLDER/clang-$clang_version"
+  if [ -d "$clang_dir/bin" ]; then
+    return
+  fi
+  mkdir -p "$clang_dir"
+  echo "[clang] Downloading clang $clang_version ..."
+  base_url="https://commondatastorage.googleapis.com/chromium-browser-clang"
+  if is_macos; then
+    os_prefix="Mac_arm64"
+  else
+    os_prefix="Linux_x64"
+  fi
+
+  base_url="https://commondatastorage.googleapis.com/chromium-browser-clang"
+  remote_source="$base_url/?delimiter=/&prefix=${os_prefix}/"
+
+  best_generation=0
+  best_tar=""
+  while true; do
+    response=$(curl -s -L -w "%{http_code}" "$remote_source")
+    http_code="${response: -3}"
+    content="${response:0:${#response}-3}"
+
+    if [[ "$http_code" -ge 400 ]]; then
+      echo "[error] Failed to download clang: $clang_version" >&2
+      echo "        source returned HTTP $http_code ($remote_source)" >&2
+      exit 1
+    elif [[ -z "$content" ]]; then
+      echo "[error] Failed to import clang: $clang_version" >&2
+      echo "        empty content received from $remote_source" >&2
+      exit 1
+    fi
+
+    for block in $(echo "$content" | perl -0777 -ne 'while (/<Contents>.*?<\/Contents>/sg) { print "$&\n" }'); do
+      tarball=$(echo "$block" | perl -ne "print \$1 if /<Key>${os_prefix}\/(clang-[^<]+\.(?:tgz|tar\.xz))<\/Key>/")
+      generation=$(echo "$block" | perl -ne 'print $1 if /<Generation>([0-9]+)<\/Generation>/')
+
+      if [[ "$tarball" == "clang-llvmorg-$clang_version-"* ]] && (( generation > best_generation )); then
+        best_generation=$generation
+        best_tar=$tarball
+      fi
+    done
+
+    next_marker=$(perl -ne 'print $1 if /<NextMarker>(.*?)<\/NextMarker>/' <<< "$content" || true)
+    if [ -n "$next_marker" ]; then
+      remote_source="$base_url/?delimiter=/&prefix=${os_prefix}/&marker=${next_marker}"
+    else
+      break
+    fi
+  done
+
+  if [ -z "$best_tar" ]; then
+    echo "[error] Unable to find clang version $clang_version" >&2
+    exit 1
+  fi
+
+  echo "[clang] Downloading clang tarball: $best_tar ..."
+  curl -L "${base_url}/${os_prefix}/$best_tar" -o "$clang_dir/clang.tar"
+
+  if [[ "$best_tar" == *.tgz ]]; then
+    tar -xzf "$clang_dir/clang.tar" -C "$clang_dir"
+  elif [[ "$best_tar" == *.tar.xz ]]; then
+    tar -xJf "$clang_dir/clang.tar" -C "$clang_dir"
+  else
+    echo "[error] Unknown tarball extension: $best_tar" >&2
+    exit 1
+  fi
+  rm "$clang_dir/clang.tar"
+
+  echo "[clang] Installed clang $clang_version"
 }
