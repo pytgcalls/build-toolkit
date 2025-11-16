@@ -595,6 +595,13 @@ is_android() {
   return 1
 }
 
+is_arm64() {
+  if [[ "$(normalize_arch "default" "fancy")" == "arm64-v8a" ]]; then
+    return 0
+  fi
+  return 1
+}
+
 get_vs_edition() {
   local VS_YEAR VS_EDITION year dir
   local VS_BASE_PATH="$1"
