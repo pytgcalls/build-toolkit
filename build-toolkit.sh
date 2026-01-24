@@ -734,7 +734,7 @@ require() {
                 ;;
           esac
           mkdir -p "$DEFAULT_TOOLS_FOLDER"
-          ndk_name="android-ndk-r26b"
+          ndk_name="android-ndk-r28b"
           export ANDROID_NDK_ROOT="$DEFAULT_TOOLS_FOLDER/$ndk_name"
           if [ ! -d "$ANDROID_NDK_ROOT" ]; then
             run curl -L "https://dl.google.com/android/repository/$ndk_name-$platform_name.zip" -o "$DEFAULT_TOOLS_FOLDER/android-ndk.zip"
