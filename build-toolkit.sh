@@ -1057,6 +1057,8 @@ build_and_install() {
       rm -rf "$dir_after_build"
       ;;
     b2|b2-static)
+      rm -rf ~/.boost-build
+      rm -rf bin.v2
       if [[ ! -f "b2" && ! -f "b2.exe" ]]; then
         if is_windows; then
           run ./bootstrap.bat
