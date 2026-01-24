@@ -1530,15 +1530,10 @@ android_tool() {
  case "$tool" in
   cc|cxx)
     local clang_ex="clang"
-    local abi_name=""
     if [[ "$tool" == "cxx" ]]; then
       clang_ex="clang++"
     fi
-    abi_name="android"
-    if [[ "$arch" == "armv7a" ]]; then
-      abi_name="${abi_name}eabi"
-    fi
-    echo "$ANDROID_PREBUILT/bin/$arch-linux-$abi_name$ANDROID_API-$clang_ex"
+    echo "$ANDROID_PREBUILT/bin/$(android_tool target "$arch")-$clang_ex"
     ;;
   ar|ranlib|nm|strip)
     echo "$ANDROID_PREBUILT/bin/llvm-$tool"
@@ -1558,6 +1553,9 @@ android_tool() {
       exit 1
     fi
     echo "$builtin_path"
+    ;;
+  target)
+    echo "$arch-linux-android$(if [[ "$arch" == "armv7a" ]]; then echo "eabi"; fi)$ANDROID_API"
     ;;
   *)
     echo "[error] Unknown tool: $tool" >&2
