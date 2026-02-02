@@ -437,7 +437,7 @@ read_cache() {
 retrieve_prefix() {
   local tags="$1"
   local base_version="$2"
-  matching_tags=$(echo "$tags" | grep "${base_version//./\\.}" | head -n 1)
+  matching_tags=$(echo "$tags" | grep "${base_version//./.}" | head -n 1)
   if [[ -z "$matching_tags" ]]; then
     return 1
   fi
@@ -447,7 +447,7 @@ retrieve_prefix() {
 identify_separator() {
   local tags="$1"
   local base_version="$2"
-  matching_tags=$(echo "$tags" | grep "${base_version//./\\.}" | head -n 1)
+  matching_tags=$(echo "$tags" | grep "${base_version//./.}" | head -n 1)
   if [[ -z "$matching_tags" ]]; then
     return 1
   fi
@@ -520,7 +520,7 @@ find_latest_version() {
     suffix=".*-$(echo "$base_version" | sed -E 's/.*[0-9]+-//')$"
   fi
   base_version="$(apply_separator "$base_version" "$separator")"
-  pattern_version="^$(echo "$base_version" | perl -pe 's/\d+/\\d+/g; s/\./\\./g; s/\//\\\//g;')$"
+  pattern_version="^$(echo "$base_version" | perl -pe 's/\d+/\\d+/g; s/\././g; s/\//\\\//g;')$"
 
   apply_separator "$(echo "$tags" \
     | grep "^$prefix$void_prefix$suffix" \
