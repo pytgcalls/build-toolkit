@@ -595,6 +595,10 @@ is_android() {
   return 1
 }
 
+is_musl() {
+  ldd --version 2>&1 | grep -qi musl
+}
+
 is_arm64() {
   if [[ "$(normalize_arch "default" "fancy")" == "arm64-v8a" ]]; then
     return 0
