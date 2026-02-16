@@ -81,8 +81,21 @@ else
   CACHE_FILE="$BUILD_KIT_DIR/fox.cache"
 fi
 
-export VS_BASE_PATH="/c/Program Files/Microsoft Visual Studio"
-export WINDOWS_KITS_BASE_PATH="/c/Program Files (x86)/Windows Kits/10"
+find_in_program_files() {
+  local subpath="$1"
+  for base in "/c/Program Files" "/c/Program Files (x86)"; do
+    if [[ -d "$base/$subpath" ]]; then
+      echo "$base/$subpath"
+      return 0
+    fi
+  done
+  return 1
+}
+
+export VS_BASE_PATH
+VS_BASE_PATH="$(find_in_program_files "Microsoft Visual Studio")"
+export WINDOWS_KITS_BASE_PATH
+WINDOWS_KITS_BASE_PATH="$(find_in_program_files "Windows Kits/10")"
 
 mkdir -p "$BUILD_KIT_DIR"
 
@@ -622,7 +635,7 @@ get_vs_edition() {
 
   local VS_BASE_PATH="$VS_BASE_PATH/$VS_YEAR"
 
-  for edition in Enterprise Professional Community; do
+  for edition in Enterprise Professional Community BuildTools; do
       if [[ -d "$VS_BASE_PATH/$edition" ]]; then
           VS_EDITION="$edition"
           break
@@ -705,10 +718,18 @@ require() {
       source "$HOME"/.cargo/env
       ;;
     venv)
-      if [ ! -d "venv" ]; then
-        run python3 -m venv venv
+      local py_cmd="python3"
+      if is_windows; then
+        py_cmd="python"
       fi
-      source venv/bin/activate
+      if [ ! -d "venv" ]; then
+        run "$py_cmd" -m venv venv
+      fi
+      if [ -f "venv/Scripts/activate" ]; then
+        source venv/Scripts/activate
+      else
+        source venv/bin/activate
+      fi
       ;;
     xcode)
       if is_macos; then
