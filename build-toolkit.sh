@@ -63,6 +63,8 @@ done
 
 OS_NAME="$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')"
 
+export PATH="/usr/bin:$PATH"
+
 if [[ "$OS_NAME" != "android" ]]; then
   append_library "/usr"
   append_library "/usr/local"
@@ -742,9 +744,36 @@ require() {
         MSVC_VERSION="$(get_msvc_version "$VS_BASE_PATH" "$VS_EDITION")"
         WINDOWS_KITS_VERSION="$(get_windows_kits_version "$WINDOWS_KITS_BASE_PATH")"
 
-        export PATH="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/bin/Hostx64/x64:$PATH"
-        export LIB="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/lib/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/um/x64:$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/ucrt/x64"
-        export INCLUDE="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/include:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/ucrt:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/um:$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/shared"
+        MSVC_BIN="$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/bin/Hostx64/x64"
+        export PATH="$MSVC_BIN:$PATH"
+
+        MSVC_LIB_DIR="$(cygpath -w "$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/lib/x64")"
+        MSVC_INCLUDE_DIR="$(cygpath -w "$VS_BASE_PATH/$VS_EDITION/VC/Tools/MSVC/$MSVC_VERSION/include")"
+        WKITS_UM_LIB="$(cygpath -w "$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/um/x64")"
+        WKITS_UCRT_LIB="$(cygpath -w "$WINDOWS_KITS_BASE_PATH/Lib/$WINDOWS_KITS_VERSION/ucrt/x64")"
+        WKITS_UCRT_INC="$(cygpath -w "$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/ucrt")"
+        WKITS_UM_INC="$(cygpath -w "$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/um")"
+        WKITS_SHARED_INC="$(cygpath -w "$WINDOWS_KITS_BASE_PATH/Include/$WINDOWS_KITS_VERSION/shared")"
+
+        export LIB="${MSVC_LIB_DIR};${WKITS_UM_LIB};${WKITS_UCRT_LIB}"
+        export INCLUDE="${MSVC_INCLUDE_DIR};${WKITS_UCRT_INC};${WKITS_UM_INC};${WKITS_SHARED_INC}"
+        export CC="$MSVC_BIN/cl.exe"
+        export CXX="$MSVC_BIN/cl.exe"
+        export MSYS2_ARG_CONV_EXCL="*"
+
+        export MESON_CROSS_FILE="$BUILD_KIT_DIR/msvc-cross.ini"
+        cat > "$MESON_CROSS_FILE" << NEOF
+[host_machine]
+system = 'windows'
+cpu_family = '$(normalize_arch default win)'
+cpu = '$(normalize_arch default win)'
+endian = 'little'
+
+[binaries]
+c = '$MSVC_BIN/cl.exe'
+cpp = '$MSVC_BIN/cl.exe'
+NEOF
+
         echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
       fi
       ;;
@@ -1005,6 +1034,9 @@ build_and_install() {
       new_args+=("--prefix=$build_dir")
       new_args+=("--libdir=lib")
       new_args+=("--buildtype=release")
+      if [[ -n "$MESON_CROSS_FILE" ]]; then
+        new_args+=("--cross-file=$MESON_CROSS_FILE")
+      fi
       ;;
     cmake|cmake-static)
       executable_command=(cmake)
