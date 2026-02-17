@@ -17,12 +17,73 @@ else
   fi
 fi
 
+export ACLOCAL_PATH=/usr/share/aclocal
+
+RUN_UPDATES=false
+RUN_NO_CACHE=false
+export OS_NAME
+OS_NAME="$(uname -s)"
+: "${MAIN_SCRIPT:="$0"}"
+
+is_windows() {
+  case "$OS_NAME" in
+    cygwin*|mingw*|msys*|windows)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_linux() {
+  case "$OS_NAME" in
+    linux)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_macos() {
+  case "$OS_NAME" in
+    darwin)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_android() {
+  case "$OS_NAME" in
+    android)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_musl() {
+  ldd --version 2>&1 | grep -qi musl
+}
+
+is_arm64() {
+  if [[ "$(normalize_arch "default" "fancy")" == "arm64-v8a" ]]; then
+    return 0
+  fi
+  return 1
+}
+
 append_env_path() {
   local env_var="$1"
   local new_path="$2"
   local divider=":"
   local current_value="${!env_var}"
   [[ "$new_path" == -* ]] && divider=" "
+  if is_windows; then
+      if [[ "$env_var" == "LIB" || "$env_var" == "INCLUDE" ]]; then
+        divider=";"
+        new_path="$(cygpath -w "$new_path")"
+      fi
+  fi
   if [[ "$divider${!env_var}$divider" != *"$divider$new_path$divider"* ]]; then
     if [[ -z "$current_value" ]]; then
       export "$env_var=$new_path"
@@ -36,20 +97,17 @@ append_library() {
   local out_path="$1"
   append_env_path "PKG_CONFIG_PATH" "$out_path/lib/pkgconfig"
   append_env_path "PKG_CONFIG_PATH" "$out_path/share/pkgconfig"
-  append_env_path "CFLAGS" "-I$out_path/include"
-  append_env_path "CXXFLAGS" "-I$out_path/include"
-  append_env_path "LDFLAGS" "-L$out_path/lib"
-  append_env_path "LIBRARY_PATH" "$out_path/lib"
-  append_env_path "LD_LIBRARY_PATH" "$out_path/lib"
+  if ! is_windows; then
+    append_env_path "CFLAGS" "-I$out_path/include"
+    append_env_path "CXXFLAGS" "-I$out_path/include"
+    append_env_path "LDFLAGS" "-L$out_path/lib"
+    append_env_path "LIBRARY_PATH" "$out_path/lib"
+    append_env_path "LD_LIBRARY_PATH" "$out_path/lib"
+  else
+   append_env_path "INCLUDE" "$out_path/include"
+   append_env_path "LIB" "$out_path/lib"
+  fi
 }
-
-export ACLOCAL_PATH=/usr/share/aclocal
-
-RUN_UPDATES=false
-RUN_NO_CACHE=false
-export OS_NAME
-OS_NAME="$(uname -s)"
-: "${MAIN_SCRIPT:="$0"}"
 
 for arg in "$@"; do
   if [[ $arg == --update ]]; then
@@ -572,53 +630,6 @@ dependency_version() {
   local tag_prefix="LIB_${key}_PREFIX"
   local version_var="LIB_${key}_VERSION"
   echo "${!tag_prefix}${!version_var}"
-}
-
-is_windows() {
-  case "$OS_NAME" in
-    cygwin*|mingw*|msys*|windows)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-is_linux() {
-  case "$OS_NAME" in
-    linux)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-is_macos() {
-  case "$OS_NAME" in
-    darwin)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-is_android() {
-  case "$OS_NAME" in
-    android)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-is_musl() {
-  ldd --version 2>&1 | grep -qi musl
-}
-
-is_arm64() {
-  if [[ "$(normalize_arch "default" "fancy")" == "arm64-v8a" ]]; then
-    return 0
-  fi
-  return 1
 }
 
 get_vs_edition() {
