@@ -794,7 +794,7 @@ require() {
         export CXX="$MSVC_BIN/cl.exe"
         export MSYS2_ARG_CONV_EXCL="*"
 
-        export MESON_CROSS_FILE="$BUILD_KIT_DIR/msvc-cross.ini"
+        export MESON_CROSS_FILE="$BUILD_KIT_DIR/msvc.ini"
         cat > "$MESON_CROSS_FILE" << NEOF
 [host_machine]
 system = 'windows'
