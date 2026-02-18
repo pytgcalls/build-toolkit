@@ -1178,9 +1178,15 @@ build_and_install() {
       save_headers run make -j"$(cpu_count)" --ignore-errors=2
       save_headers run make install
     elif [[ "$build_type" == meson* || "$build_tool" == "Ninja" ]]; then
-      run python -m ninja -C build -t clean
-      save_headers run python -m ninja -C build -j"$(cpu_count)"
-      save_headers run python -m ninja -C build install
+      local ninja_cmd
+      if python -m pip show "ninja" &>/dev/null; then
+        ninja_cmd="python -m ninja"
+      else
+        ninja_cmd="ninja"
+      fi
+      run $ninja_cmd -C build -t clean
+      save_headers run "$ninja_cmd" -C build -j"$(cpu_count)"
+      save_headers run "$ninja_cmd" -C build install
     elif [[ -n "$build_tool" ]]; then
       run cmake --build . --target clean --config Release
       save_headers run cmake --build . --config Release -j"$(cpu_count)"
