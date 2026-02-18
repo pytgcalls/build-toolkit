@@ -1155,7 +1155,7 @@ build_and_install() {
       rm -rf "$build_dir"
       ;;
   esac
-  write_cache "lib_include" "$git_var" ";"
+  remove_previous_headers
   if [ -n "$pre_build_commands" ]; then
       local pre_build_commands_array
       eval "pre_build_commands_array=($pre_build_commands)"
@@ -1201,31 +1201,57 @@ build_and_install() {
   append_library "$build_dir"
 }
 
-save_headers() {
-  tmp_before=$(mktemp)
-  tmp_after=$(mktemp)
-  touch "$tmp_before"
-  "$@"
-  touch "$tmp_after"
-  if [[ -d "$build_dir/include" ]]; then
-    local new_headers=()
-    while IFS= read -r line; do
-      new_headers+=("$line")
-    done < <(find "$build_dir/include" -type f \( \
-      -name "*.h"    -o -name "*.cuh"  -o -name "*.hh"  -o -name "*.hp"  -o \
-      -name "*.hpp"  -o -name "*.hxx"  -o -name "*.icc" -o -name "*.inl" -o \
-      -name "*.ino"  -o -name "*.ipp"  -o -name "*.tcc" -o -name "*.tpp" \
-      \) -cnewer "$tmp_before" ! -cnewer "$tmp_after" | sort -u)
-    old_cache=$(read_cache "lib_include" "$git_var")
-    IFS=';' read -r -a old_headers <<< "$old_cache"
-    all_headers=("${old_headers[@]}" "${new_headers[@]}")
-    local unique_headers=()
-    while IFS= read -r line; do
-      unique_headers+=("$line")
-    done < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
-    write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
+remove_previous_headers() {
+  cached_headers="$(read_cache "lib_include" "$git_var")"
+  if [[ -n "$cached_headers" ]]; then
+    IFS=';' read -r -a headers <<< "$cached_headers"
+    for i in "${!headers[@]}"; do
+      rm -f "${headers[$i]}"
+    done
   fi
-  rm "$tmp_before" "$tmp_after"
+  write_cache "lib_include" "$git_var" ";"
+}
+
+get_current_files() {
+  if [[ -d "$build_dir/include" ]]; then
+      find "$build_dir/include" -type f \( \
+        -name "*.h"    -o -name "*.cuh"  -o -name "*.hh"  -o -name "*.hp"  -o \
+        -name "*.hpp"  -o -name "*.hxx"  -o -name "*.icc" -o -name "*.inl" -o \
+        -name "*.ino"  -o -name "*.ipp"  -o -name "*.tcc" -o -name "*.tpp" \
+      \) | sort
+  fi
+}
+
+save_headers() {
+  local before after
+  local new_headers=()
+  local old_headers=()
+  local all_headers=()
+  if [[ -d "$build_dir/include" ]]; then
+    before=$(get_current_files)
+  fi
+  "$@"
+  if [[ -d "$build_dir/include" ]]; then
+    after=$(get_current_files)
+  fi
+
+  while IFS= read -r line; do
+    new_headers+=("$line")
+  done < <(
+    comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after")
+  )
+
+  local old_cache
+  old_cache=$(read_cache "lib_include" "$git_var")
+  IFS=';' read -r -a old_headers <<< "$old_cache"
+  all_headers=("${old_headers[@]}" "${new_headers[@]}")
+
+  local unique_headers=()
+  while IFS= read -r line; do
+    unique_headers+=("$line")
+  done < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
+
+  write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
 }
 
 normalize_arch() {
