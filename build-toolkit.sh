@@ -763,11 +763,7 @@ require() {
       if [ ! -d "venv" ]; then
         run "$py_cmd" -m venv venv
       fi
-      if [ -f "venv/Scripts/activate" ]; then
-        source venv/Scripts/activate
-      else
-        source venv/bin/activate
-      fi
+      source venv/bin/activate
       ;;
     xcode)
       if is_macos; then
