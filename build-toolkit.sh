@@ -79,16 +79,16 @@ append_env_path() {
   local current_value="${!env_var}"
   [[ "$new_path" == -* ]] && divider=" "
   if is_windows; then
-      if [[ "$env_var" == "LIB" || "$env_var" == "INCLUDE" ]]; then
-        divider=";"
-        new_path="$(cygpath -w "$new_path")"
-      fi
+    if [[ "$env_var" == "LIB" || "$env_var" == "INCLUDE" ]]; then
+      divider=";"
+      new_path="$(cygpath -w "$new_path")"
+    fi
   fi
   if [[ "$divider${!env_var}$divider" != *"$divider$new_path$divider"* ]]; then
     if [[ -z "$current_value" ]]; then
       export "$env_var=$new_path"
     else
-      export "$env_var=${current_value}${divider}${new_path}"
+      export "$env_var=${new_path}${divider}${current_value}"
     fi
   fi
 }
