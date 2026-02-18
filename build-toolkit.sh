@@ -1172,13 +1172,13 @@ build_and_install() {
     elif [[ "$build_type" == meson* || "$build_tool" == "Ninja" ]]; then
       local ninja_cmd
       if python -m pip show "ninja" &>/dev/null; then
-        ninja_cmd="python -m ninja"
+        ninja_cmd=(python -m ninja)
       else
-        ninja_cmd="ninja"
+        ninja_cmd=(ninja)
       fi
-      run $ninja_cmd -C build -t clean
-      save_headers run "$ninja_cmd" -C build -j"$(cpu_count)"
-      save_headers run "$ninja_cmd" -C build install
+      run "${ninja_cmd[@]}" -C build -t clean
+      save_headers run "${ninja_cmd[@]}" -C build -j"$(cpu_count)"
+      save_headers run "${ninja_cmd[@]}" -C build install
     elif [[ -n "$build_tool" ]]; then
       run cmake --build . --target clean --config Release
       save_headers run cmake --build . --config Release -j"$(cpu_count)"
