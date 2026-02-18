@@ -34,6 +34,15 @@ is_windows() {
   return 1
 }
 
+is_mingw() {
+  case "$OS_NAME" in
+    mingw*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 is_linux() {
   case "$OS_NAME" in
     linux)
@@ -70,6 +79,22 @@ is_arm64() {
     return 0
   fi
   return 1
+}
+
+to_windows() {
+  if is_mingw; then
+    cygpath -w "$1"
+  else
+    echo "$1"
+  fi
+}
+
+to_unix() {
+  if is_mingw; then
+    cygpath -u "$1"
+  else
+    echo "$1"
+  fi
 }
 
 append_env_path() {
@@ -123,7 +148,7 @@ OS_NAME="$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')"
 
 export PATH="/usr/bin:$PATH"
 
-if [[ "$OS_NAME" != "android" ]]; then
+if ! is_android && ! is_windows ; then
   append_library "/usr"
   append_library "/usr/local"
 fi
@@ -781,8 +806,8 @@ cpu = '$(normalize_arch default win)'
 endian = 'little'
 
 [binaries]
-c = '$MSVC_BIN/cl.exe'
-cpp = '$MSVC_BIN/cl.exe'
+c = '$(to_windows "$MSVC_BIN/cl.exe")'
+cpp = '$(to_windows "$MSVC_BIN/cl.exe")'
 NEOF
 
         echo "[info] Correctly set env vars for Visual Studio $VS_EDITION, MSVC $MSVC_VERSION and Windows Kits $WINDOWS_KITS_VERSION" >&2
@@ -1028,25 +1053,25 @@ build_and_install() {
       if $is_static; then
         new_args+=("--enable-static" "--disable-shared" "--enable-pic")
       fi
-      new_args+=("--prefix=$build_dir")
+      new_args+=("--prefix=$(to_windows "$build_dir")")
       ;;
     configure|configure-static)
       executable_command=("./configure")
       if $is_static; then
         new_args+=("--enable-static" "--disable-shared" "--enable-pic")
       fi
-      new_args+=("--prefix=$build_dir")
+      new_args+=("--prefix=$(to_windows "$build_dir")")
       ;;
     meson|meson-static)
       executable_command=(python -m mesonbuild.mesonmain setup --reconfigure build)
       if $is_static; then
         new_args+=("--default-library=static")
       fi
-      new_args+=("--prefix=$build_dir")
+      new_args+=("--prefix=$(to_windows "$build_dir")")
       new_args+=("--libdir=lib")
       new_args+=("--buildtype=release")
       if [[ -n "$MESON_CROSS_FILE" ]]; then
-        new_args+=("--cross-file=$MESON_CROSS_FILE")
+        new_args+=("--cross-file=$(to_windows "$MESON_CROSS_FILE")")
       fi
       ;;
     cmake|cmake-static)
@@ -1084,11 +1109,11 @@ build_and_install() {
       if $is_static; then
         new_args+=("-DBUILD_SHARED_LIBS=OFF")
       fi
-      new_args+=("-DCMAKE_INSTALL_PREFIX=$build_dir")
+      new_args+=("-DCMAKE_INSTALL_PREFIX=$(to_windows "$build_dir")")
       ;;
     b2|b2-static)
       executable_command=("./b2" "install" "-d+0" "-j$(cpu_count)")
-      new_args+=("--prefix=$build_dir")
+      new_args+=("--prefix=$(to_windows "$build_dir")")
       if $is_static; then
         new_args+=("link=static")
         cxx_flags_tmp=$(process_args get "cxxflags" "${new_args[@]}")
@@ -1386,6 +1411,11 @@ copy_libs() {
 
   if [[ -n "$cached_headers" ]]; then
     IFS=';' read -r -a headers <<< "$cached_headers"
+    for i in "${!headers[@]}"; do
+      if [[ -n "${headers[$i]}" ]]; then
+        headers[i]=$(to_unix "${headers[$i]}")
+      fi
+    done
   else
     echo "[error] No headers found for $lib_name" >&2
     echo "        please build the library first" >&2
