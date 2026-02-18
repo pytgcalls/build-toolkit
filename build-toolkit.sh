@@ -756,12 +756,8 @@ require() {
       source "$HOME"/.cargo/env
       ;;
     venv)
-      local py_cmd="python3"
-      if is_windows; then
-        py_cmd="python"
-      fi
       if [ ! -d "venv" ]; then
-        run "$py_cmd" -m venv venv
+        run python3 -m venv venv
       fi
       source venv/bin/activate
       ;;
