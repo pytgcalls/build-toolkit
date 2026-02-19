@@ -82,7 +82,7 @@ is_arm64() {
 }
 
 to_windows() {
-  if is_mingw; then
+  if is_windows; then
     cygpath -w "$1"
   else
     echo "$1"
@@ -90,7 +90,7 @@ to_windows() {
 }
 
 to_unix() {
-  if is_mingw; then
+  if is_windows; then
     cygpath -u "$1"
   else
     echo "$1"
