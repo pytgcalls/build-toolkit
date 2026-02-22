@@ -146,8 +146,6 @@ done
 
 OS_NAME="$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')"
 
-export PATH="/usr/bin:$PATH"
-
 if ! is_android && ! is_windows ; then
   append_library "/usr"
   append_library "/usr/local"
