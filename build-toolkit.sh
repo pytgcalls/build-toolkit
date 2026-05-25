@@ -1166,7 +1166,7 @@ build_and_install() {
     if [[ "$build_type" == autogen* || "$build_type" == configure* || "$build_type" == "make" || "$build_tool" == "Unix Makefiles" ]]; then
       run make clean --ignore-errors=2
       save_headers run make -j"$(cpu_count)" --ignore-errors=2
-      save_headers run make install
+      save_headers run make PREFIX="$(to_windows "$build_dir")" install
     elif [[ "$build_type" == meson* || "$build_tool" == "Ninja" ]]; then
       local ninja_cmd
       if python -m pip show "ninja" &>/dev/null; then
