@@ -128,6 +128,9 @@ append_library() {
     append_env_path "LDFLAGS" "-L$out_path/lib"
     append_env_path "LIBRARY_PATH" "$out_path/lib"
     append_env_path "LD_LIBRARY_PATH" "$out_path/lib"
+    if is_linux; then
+      append_env_path "LDFLAGS" "-static-libstdc++"
+    fi
   else
    append_env_path "INCLUDE" "$out_path/include"
    append_env_path "LIB" "$out_path/lib"
