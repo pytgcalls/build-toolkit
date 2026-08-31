@@ -1143,7 +1143,7 @@ build_and_install() {
         if is_windows; then
           run ./bootstrap.bat
         else
-          run ./bootstrap.sh
+          run env -u LIBRARY_PATH ./bootstrap.sh
         fi
       fi
       rm -rf "$build_dir"
