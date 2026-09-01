@@ -1198,15 +1198,19 @@ build_and_install() {
   append_library "$build_dir"
 }
 
+headers_cache_key() {
+  echo "$git_var${sub_path:+/$sub_path}"
+}
+
 remove_previous_headers() {
-  cached_headers="$(read_cache "lib_include" "$git_var")"
+  cached_headers="$(read_cache "lib_include" "$(headers_cache_key)")"
   if [[ -n "$cached_headers" ]]; then
     IFS=';' read -r -a headers <<< "$cached_headers"
     for i in "${!headers[@]}"; do
       rm -f "${headers[$i]}"
     done
   fi
-  write_cache "lib_include" "$git_var" ";"
+  write_cache "lib_include" "$(headers_cache_key)" ";"
 }
 
 get_current_files() {
@@ -1239,7 +1243,7 @@ save_headers() {
   )
 
   local old_cache
-  old_cache=$(read_cache "lib_include" "$git_var")
+  old_cache=$(read_cache "lib_include" "$(headers_cache_key)")
   IFS=';' read -r -a old_headers <<< "$old_cache"
   all_headers=("${old_headers[@]}" "${new_headers[@]}")
 
@@ -1248,7 +1252,7 @@ save_headers() {
     unique_headers+=("$line")
   done < <(printf "%s\n" "${all_headers[@]}" | awk 'NF' | sort -u)
 
-  write_cache "lib_include" "$git_var" "$(printf "%s;" "${unique_headers[@]}")"
+  write_cache "lib_include" "$(headers_cache_key)" "$(printf "%s;" "${unique_headers[@]}")"
 }
 
 normalize_arch() {
