@@ -1699,6 +1699,8 @@ install_clang() {
   base_url="https://commondatastorage.googleapis.com/chromium-browser-clang"
   if is_macos; then
     os_prefix="Mac_arm64"
+  elif is_windows; then
+    os_prefix="Win"
   else
     os_prefix="Linux_x64"
   fi
