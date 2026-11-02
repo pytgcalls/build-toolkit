@@ -1434,6 +1434,9 @@ copy_libs() {
   local include_dir="$base_path/include"
   headers=()
   cached_headers="$(read_cache "lib_include" "$git_var")"
+  if [[ -f "$CACHE_FILE" ]]; then
+    cached_headers+="$(grep -F "lib_include:$git_var/" "$CACHE_FILE" | cut -d= -f2- | tr -d '\n')"
+  fi
 
   if [[ -n "$cached_headers" ]]; then
     IFS=';' read -r -a headers <<< "$cached_headers"
